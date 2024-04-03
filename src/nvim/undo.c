@@ -736,10 +736,15 @@ char *u_get_undo_file_name(const char *const buf_ffname, const bool reading)
       }
       if (has_directory) {
         if (munged_name == NULL) {
-          munged_name = xstrdup(ffname);
-          for (char *c = munged_name; *c != NUL; MB_PTR_ADV(c)) {
-            if (vim_ispathsep(*c)) {
-              *c = '%';
+          if (p_udfhash) {
+            munged_name = (char*) sha256_bytes((const uint8_t *)ffname, strlen(ffname), NULL, 0);
+          }
+          else {
+            munged_name = xstrdup(ffname);
+            for (char *c = munged_name; *c != NUL; MB_PTR_ADV(c)) {
+              if (vim_ispathsep(*c)) {
+                *c = '%';
+              }
             }
           }
         }
@@ -755,7 +760,9 @@ char *u_get_undo_file_name(const char *const buf_ffname, const bool reading)
     XFREE_CLEAR(undo_file_name);
   }
 
-  xfree(munged_name);
+  if (!p_udfhash) {
+    xfree(munged_name);
+  }
   return undo_file_name;
 }
 
