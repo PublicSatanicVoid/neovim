@@ -1598,11 +1598,10 @@ function vim.fn.eventhandler() end
 --- The result is a Number:
 ---   1  exists
 ---   0  does not exist
----   -1  not implemented on this system
 --- |exepath()| can be used to get the full path of an executable.
 ---
 --- @param expr any
---- @return 0|1|-1
+--- @return 0|1
 function vim.fn.executable(expr) end
 
 --- Execute {command} and capture its output.
@@ -1959,6 +1958,7 @@ function vim.fn.extendnew(expr1, expr2, expr3) end
 --- 't'  Handle keys as if typed; otherwise they are handled as
 ---   if coming from a mapping.  This matters for undo,
 ---   opening folds, etc.
+--- 'L'  Lowlevel input.  Other flags are not used.
 --- 'i'  Insert the string instead of appending (see above).
 --- 'x'  Execute commands until typeahead is empty.  This is
 ---   similar to using ":normal!".  You can call feedkeys()
@@ -2703,14 +2703,14 @@ function vim.fn.getcellwidths() end
 function vim.fn.getchangelist(buf) end
 
 --- Get a single character from the user or input stream.
---- If [expr] is omitted, wait until a character is available.
---- If [expr] is 0, only get a character when one is available.
+--- If {expr} is omitted, wait until a character is available.
+--- If {expr} is 0, only get a character when one is available.
 ---   Return zero otherwise.
---- If [expr] is 1, only check if a character is available, it is
+--- If {expr} is 1, only check if a character is available, it is
 ---   not consumed.  Return zero if no character available.
 --- If you prefer always getting a string use |getcharstr()|.
 ---
---- Without [expr] and when [expr] is 0 a whole character or
+--- Without {expr} and when {expr} is 0 a whole character or
 --- special key is returned.  If it is a single character, the
 --- result is a Number.  Use |nr2char()| to convert it to a String.
 --- Otherwise a String is returned with the encoded character.
@@ -2720,11 +2720,11 @@ function vim.fn.getchangelist(buf) end
 --- also a String when a modifier (shift, control, alt) was used
 --- that is not included in the character.
 ---
---- When [expr] is 0 and Esc is typed, there will be a short delay
+--- When {expr} is 0 and Esc is typed, there will be a short delay
 --- while Vim waits to see if this is the start of an escape
 --- sequence.
 ---
---- When [expr] is 1 only the first byte is returned.  For a
+--- When {expr} is 1 only the first byte is returned.  For a
 --- one-byte character it is the character itself as a number.
 --- Use nr2char() to convert it to a String.
 ---
@@ -2828,10 +2828,10 @@ function vim.fn.getcharsearch() end
 
 --- Get a single character from the user or input stream as a
 --- string.
---- If [expr] is omitted, wait until a character is available.
---- If [expr] is 0 or false, only get a character when one is
+--- If {expr} is omitted, wait until a character is available.
+--- If {expr} is 0 or false, only get a character when one is
 ---   available.  Return an empty string otherwise.
---- If [expr] is 1 or true, only check if a character is
+--- If {expr} is 1 or true, only check if a character is
 ---   available, it is not consumed.  Return an empty string
 ---   if no character is available.
 --- Otherwise this works like |getchar()|, except that a number
@@ -3628,11 +3628,11 @@ function vim.fn.getregtype(regname) end
 ---
 --- Examples: >vim
 ---   echo getscriptinfo({'name': 'myscript'})
----   echo getscriptinfo({'sid': 15}).variables
+---   echo getscriptinfo({'sid': 15})[0].variables
 --- <
 ---
 --- @param opts? table
---- @return any
+--- @return vim.fn.getscriptinfo.ret[]
 function vim.fn.getscriptinfo(opts) end
 
 --- If {tabnr} is not specified, then information about all the
@@ -5993,7 +5993,7 @@ function vim.fn.min(expr) end
 function vim.fn.mkdir(name, flags, prot) end
 
 --- Return a string that indicates the current mode.
---- If [expr] is supplied and it evaluates to a non-zero Number or
+--- If {expr} is supplied and it evaluates to a non-zero Number or
 --- a non-empty String (|non-zero-arg|), then the full mode is
 --- returned, otherwise only the first letter is returned.
 --- Also see |state()|.
@@ -6583,7 +6583,7 @@ function vim.fn.prevnonblank(lnum) end
 ---
 --- @param fmt any
 --- @param expr1? any
---- @return any
+--- @return string
 function vim.fn.printf(fmt, expr1) end
 
 --- Returns the effective prompt text for buffer {buf}.  {buf} can
@@ -8293,10 +8293,11 @@ function vim.fn.sha256(string) end
 --- Otherwise encloses {string} in single-quotes and replaces all
 --- "'" with "'\''".
 ---
---- If {special} is a |non-zero-arg|:
---- - Special items such as "!", "%", "#" and "<cword>" will be
----   preceded by a backslash. The backslash will be removed again
----   by the |:!| command.
+--- The {special} argument adds additional escaping of keywords
+--- used in Vim commands. If it is a |non-zero-arg|:
+--- - Special items such as "!", "%", "#" and "<cword>" (as listed
+---   in |expand()|) will be preceded by a backslash.
+---   The backslash will be removed again by the |:!| command.
 --- - The <NL> character is escaped.
 ---
 --- If 'shell' contains "csh" in the tail:
@@ -9353,10 +9354,10 @@ function vim.fn.stridx(haystack, needle, start) end
 --- for infinite and NaN floating-point values representations
 --- which use |str2float()|.  Strings are also dumped literally,
 --- only single quote is escaped, which does not allow using YAML
---- for parsing back binary strings.  |eval()| should always work for
---- strings and floats though and this is the only official
---- method, use |msgpackdump()| or |json_encode()| if you need to
---- share data with other application.
+--- for parsing back binary strings.  |eval()| should always work
+--- for strings and floats though, and this is the only official
+--- method.  Use |msgpackdump()| or |json_encode()| if you need to
+--- share data with other applications.
 ---
 --- @param expr any
 --- @return string
@@ -9751,6 +9752,10 @@ function vim.fn.synIDtrans(synID) end
 ---   synconcealed(lnum, 4)   [1, 'X', 2]
 ---   synconcealed(lnum, 5)   [1, 'X', 2]
 ---   synconcealed(lnum, 6)   [0, '', 0]
+---
+--- Note: Doesn't consider |matchadd()| highlighting items,
+--- since syntax and matching highlighting are two different
+--- mechanisms |syntax-vs-match|.
 ---
 --- @param lnum integer
 --- @param col integer

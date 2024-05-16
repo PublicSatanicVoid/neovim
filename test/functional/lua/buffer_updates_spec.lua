@@ -1,18 +1,19 @@
 -- Test suite for testing interactions with API bindings
-local helpers = require('test.functional.helpers')(after_each)
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
 local Screen = require('test.functional.ui.screen')
 
-local command = helpers.command
-local api = helpers.api
-local fn = helpers.fn
-local clear = helpers.clear
-local eq = helpers.eq
-local fail = helpers.fail
-local exec_lua = helpers.exec_lua
-local feed = helpers.feed
-local expect_events = helpers.expect_events
-local write_file = helpers.write_file
-local dedent = helpers.dedent
+local command = n.command
+local api = n.api
+local fn = n.fn
+local clear = n.clear
+local eq = t.eq
+local fail = t.fail
+local exec_lua = n.exec_lua
+local feed = n.feed
+local expect_events = t.expect_events
+local write_file = t.write_file
+local dedent = t.dedent
 
 local origlines = {
   'original line 1',
@@ -292,11 +293,11 @@ describe('lua buffer event callbacks: on_lines', function()
 
     exec_lua(code)
     command('q!')
-    helpers.assert_alive()
+    n.assert_alive()
 
     exec_lua(code)
     command('bd!')
-    helpers.assert_alive()
+    n.assert_alive()
   end)
 
   it('#12718 lnume', function()
@@ -965,7 +966,7 @@ describe('lua: nvim_buf_attach on_bytes', function()
       command('e! Xtest-undofile')
       command('set undodir=. | set undofile')
 
-      local ns = helpers.request('nvim_create_namespace', 'ns1')
+      local ns = n.request('nvim_create_namespace', 'ns1')
       api.nvim_buf_set_extmark(0, ns, 0, 0, {})
 
       eq({ '12345', 'hello world' }, api.nvim_buf_get_lines(0, 0, -1, true))
@@ -1263,6 +1264,25 @@ describe('lua: nvim_buf_attach on_bytes', function()
       command('diffget')
       check_events {
         { 'test1', 'bytes', 1, 4, 1, 0, 4, 1, 0, 4, 1, 0, 4 },
+      }
+    end)
+
+    it('prompt buffer', function()
+      local check_events = setup_eventcheck(verify, {})
+      api.nvim_set_option_value('buftype', 'prompt', {})
+      feed('i')
+      check_events {
+        { 'test1', 'bytes', 1, 3, 0, 0, 0, 0, 0, 0, 0, 2, 2 },
+      }
+      feed('<CR>')
+      check_events {
+        { 'test1', 'bytes', 1, 4, 1, 0, 3, 0, 0, 0, 1, 0, 1 },
+        { 'test1', 'bytes', 1, 5, 1, 0, 3, 0, 0, 0, 0, 2, 2 },
+      }
+      feed('<CR>')
+      check_events {
+        { 'test1', 'bytes', 1, 6, 2, 0, 6, 0, 0, 0, 1, 0, 1 },
+        { 'test1', 'bytes', 1, 7, 2, 0, 6, 0, 0, 0, 0, 2, 2 },
       }
     end)
 

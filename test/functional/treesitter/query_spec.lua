@@ -1,14 +1,14 @@
-local helpers = require('test.functional.helpers')(after_each)
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
 
-local clear = helpers.clear
-local dedent = helpers.dedent
-local eq = helpers.eq
-local insert = helpers.insert
-local exec_lua = helpers.exec_lua
-local pcall_err = helpers.pcall_err
-local is_os = helpers.is_os
-local api = helpers.api
-local fn = helpers.fn
+local clear = n.clear
+local dedent = t.dedent
+local eq = t.eq
+local insert = n.insert
+local exec_lua = n.exec_lua
+local pcall_err = t.pcall_err
+local api = n.api
+local fn = n.fn
 
 describe('treesitter query API', function()
   before_each(function()
@@ -67,31 +67,28 @@ void ui_refresh(void)
   it('supports caching queries', function()
     local long_query = test_query:rep(100)
     ---@return number
-    local function q(n)
+    local function q(_n)
       return exec_lua(
         [[
           local query, n = ...
-          local before = vim.uv.hrtime()
+          local before = vim.api.nvim__stats().ts_query_parse_count
+          collectgarbage("stop")
           for i=1, n, 1 do
             cquery = vim.treesitter.query.parse("c", ...)
           end
-          local after = vim.uv.hrtime()
+          collectgarbage("restart")
+          collectgarbage("collect")
+          local after = vim.api.nvim__stats().ts_query_parse_count
           return after - before
         ]],
         long_query,
-        n
+        _n
       )
     end
 
-    local firstrun = q(1)
-    local manyruns = q(100)
-
-    -- First run should be at least 200x slower than an 100 subsequent runs.
-    local factor = is_os('win') and 100 or 200
-    assert(
-      factor * manyruns < firstrun,
-      ('firstrun: %f ms, manyruns: %f ms'):format(firstrun / 1e6, manyruns / 1e6)
-    )
+    eq(1, q(1))
+    -- cache is cleared by garbage collection even if valid "cquery" reference is kept around
+    eq(1, q(100))
   end)
 
   it('supports query and iter by capture (iter_captures)', function()

@@ -1,9 +1,10 @@
-local helpers = require('test.functional.helpers')(nil)
+local n = require('test.functional.testnvim')()
 
-local clear = helpers.clear
-local exec_lua = helpers.exec_lua
-local run = helpers.run
-local stop = helpers.stop
+local clear = n.clear
+local exec_lua = n.exec_lua
+local run = n.run
+local stop = n.stop
+local api = n.api
 local NIL = vim.NIL
 
 local M = {}
@@ -211,7 +212,7 @@ function M.test_rpc_server(config)
   end
   stop()
   if config.test_name then
-    exec_lua("vim.api.nvim_exec_autocmds('VimLeavePre', { modeline = false })")
+    api.nvim_exec_autocmds('VimLeavePre', { modeline = false })
   end
 end
 

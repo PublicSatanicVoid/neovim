@@ -1,25 +1,27 @@
-local helpers = require('test.functional.helpers')(after_each)
-local lsp_helpers = require('test.functional.plugin.lsp.helpers')
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
 local Screen = require('test.functional.ui.screen')
+local t_lsp = require('test.functional.plugin.lsp.testutil')
 
-local command = helpers.command
-local dedent = helpers.dedent
-local eq = helpers.eq
-local exec_lua = helpers.exec_lua
-local feed = helpers.feed
-local feed_command = helpers.feed_command
-local insert = helpers.insert
-local matches = helpers.matches
+local command = n.command
+local dedent = t.dedent
+local eq = t.eq
+local exec_lua = n.exec_lua
+local feed = n.feed
+local feed_command = n.feed_command
+local insert = n.insert
+local matches = t.matches
+local api = n.api
 
-local clear_notrace = lsp_helpers.clear_notrace
-local create_server_definition = lsp_helpers.create_server_definition
+local clear_notrace = t_lsp.clear_notrace
+local create_server_definition = t_lsp.create_server_definition
 
 before_each(function()
   clear_notrace()
 end)
 
 after_each(function()
-  exec_lua("vim.api.nvim_exec_autocmds('VimLeavePre', { modeline = false })")
+  api.nvim_exec_autocmds('VimLeavePre', { modeline = false })
 end)
 
 describe('semantic token highlighting', function()

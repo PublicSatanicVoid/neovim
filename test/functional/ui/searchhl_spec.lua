@@ -1,12 +1,14 @@
-local helpers = require('test.functional.helpers')(after_each)
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
 local Screen = require('test.functional.ui.screen')
-local clear, feed, insert = helpers.clear, helpers.feed, helpers.insert
-local command = helpers.command
-local feed_command = helpers.feed_command
-local eq = helpers.eq
-local eval = helpers.eval
-local fn = helpers.fn
-local testprg = helpers.testprg
+
+local clear, feed, insert = n.clear, n.feed, n.insert
+local command = n.command
+local feed_command = n.feed_command
+local eq = t.eq
+local eval = n.eval
+local fn = n.fn
+local testprg = n.testprg
 
 describe('search highlighting', function()
   local screen

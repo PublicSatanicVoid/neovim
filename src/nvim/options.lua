@@ -1324,7 +1324,7 @@ return {
       defaults = { if_true = '' },
       desc = [=[
         A template for a comment.  The "%s" in the value is replaced with the
-        comment text.  For example, C uses "/*%s*/". Currently only used to
+        comment text. For example, C uses "/*%s*/". Used for |commenting| and to
         add markers for folding, see |fold-marker|.
       ]=],
       full_name = 'commentstring',
@@ -3368,6 +3368,8 @@ return {
         Format to recognize for the ":grep" command output.
         This is a scanf-like string that uses the same format as the
         'errorformat' option: see |errorformat|.
+
+        If ripgrep ('grepprg') is available, this option defaults to `%f:%l:%c:%m`.
       ]=],
       full_name = 'grepformat',
       list = 'onecomma',
@@ -3380,10 +3382,9 @@ return {
       abbreviation = 'gp',
       defaults = {
         condition = 'MSWIN',
-        if_false = 'grep -n $* /dev/null',
+        if_false = 'grep -HIn $* /dev/null',
         if_true = 'findstr /n $* nul',
-        doc = [["grep -n ",
-           Unix: "grep -n $* /dev/null"]],
+        doc = [[see below]],
       },
       desc = [=[
         Program to use for the |:grep| command.  This option may contain '%'
@@ -3391,16 +3392,23 @@ return {
         line.  The placeholder "$*" is allowed to specify where the arguments
         will be included.  Environment variables are expanded |:set_env|.  See
         |option-backslash| about including spaces and backslashes.
-        When your "grep" accepts the "-H" argument, use this to make ":grep"
-        also work well with a single file: >vim
-        	set grepprg=grep\ -nH
-        <	Special value: When 'grepprg' is set to "internal" the |:grep| command
+        Special value: When 'grepprg' is set to "internal" the |:grep| command
         works like |:vimgrep|, |:lgrep| like |:lvimgrep|, |:grepadd| like
         |:vimgrepadd| and |:lgrepadd| like |:lvimgrepadd|.
         See also the section |:make_makeprg|, since most of the comments there
         apply equally to 'grepprg'.
         This option cannot be set from a |modeline| or in the |sandbox|, for
         security reasons.
+        This option defaults to:
+        - `rg --vimgrep -uu ` if ripgrep is available (|:checkhealth|),
+        - `grep -HIn $* /dev/null` on Unix,
+        - `findstr /n $* nul` on Windows.
+        Ripgrep can perform additional filtering such as using .gitignore rules
+        and skipping hidden files. This is disabled by default (see the -u option)
+        to more closely match the behaviour of standard grep.
+        You can make ripgrep match Vim's case handling using the
+        -i/--ignore-case and -S/--smart-case options.
+        An |OptionSet| autocmd can be used to set it up to match automatically.
       ]=],
       expand = true,
       full_name = 'grepprg',
@@ -9316,6 +9324,7 @@ return {
 
         Level   Messages ~
         ----------------------------------------------------------------------
+        1	Enables Lua tracing (see above). Does not produce messages.
         2	When a file is ":source"'ed, or |shada| file is read or written.
         3	UI info, terminal capabilities.
         4	Shell commands.

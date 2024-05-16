@@ -1,15 +1,17 @@
-local helpers = require('test.functional.helpers')(after_each)
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
 local Screen = require('test.functional.ui.screen')
-local spawn, set_session, clear = helpers.spawn, helpers.set_session, helpers.clear
-local feed, command = helpers.feed, helpers.command
-local insert = helpers.insert
-local eq = helpers.eq
-local fn, api = helpers.fn, helpers.api
+
+local spawn, set_session, clear = n.spawn, n.set_session, n.clear
+local feed, command = n.feed, n.command
+local insert = n.insert
+local eq = t.eq
+local fn, api = n.fn, n.api
 
 describe('screen', function()
   local screen
   local nvim_argv = {
-    helpers.nvim_prog,
+    n.nvim_prog,
     '-u',
     'NONE',
     '-i',
@@ -700,7 +702,7 @@ describe('Screen default colors', function()
     local extra = (light and ' background=light') or ''
 
     local nvim_argv = {
-      helpers.nvim_prog,
+      n.nvim_prog,
       '-u',
       'NONE',
       '-i',

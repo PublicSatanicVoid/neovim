@@ -1,7 +1,9 @@
 # CMAKE REFERENCE
-#   intro: https://codingnest.com/basic-cmake/
-#   best practices (3.0+): https://gist.github.com/mbinna/c61dbb39bca0e4fb7d1f73b0d66a4fd1
-#   pitfalls: https://izzys.casa/2019/02/everything-you-never-wanted-to-know-about-cmake/
+#   - intro: https://codingnest.com/basic-cmake/
+#   - best practices (3.0+): https://gist.github.com/mbinna/c61dbb39bca0e4fb7d1f73b0d66a4fd1
+#   - pitfalls: https://izzys.casa/2019/02/everything-you-never-wanted-to-know-about-cmake/
+#   - troubleshooting:
+#     - variable_watch https://cmake.org/cmake/help/latest/command/variable_watch.html
 
 # Version should match the tested CMAKE_URL in .github/workflows/build.yml.
 cmake_minimum_required(VERSION 3.13)
@@ -47,11 +49,6 @@ file(GLOB DOCFILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/runtime/doc/*.txt)
 
 set_directory_properties(PROPERTIES
   EP_PREFIX "${DEPS_BUILD_DIR}")
-
-find_program(CCACHE_PRG ccache)
-if(CCACHE_PRG)
-  set(CMAKE_C_COMPILER_LAUNCHER ${CMAKE_COMMAND} -E env CCACHE_SLOPPINESS=pch_defines,time_macros ${CCACHE_PRG})
-endif()
 
 if(NOT CI_BUILD)
   set(CMAKE_INSTALL_MESSAGE NEVER)
@@ -146,12 +143,12 @@ endif()
 set(NVIM_VERSION_MAJOR 0)
 set(NVIM_VERSION_MINOR 10)
 set(NVIM_VERSION_PATCH 0)
-set(NVIM_VERSION_PRERELEASE "-dev") # for package maintainers
+set(NVIM_VERSION_PRERELEASE "") # for package maintainers
 
 # API level
 set(NVIM_API_LEVEL 12)        # Bump this after any API change.
 set(NVIM_API_LEVEL_COMPAT 0)  # Adjust this after a _breaking_ API change.
-set(NVIM_API_PRERELEASE true)
+set(NVIM_API_PRERELEASE false)
 
 # Build-type: RelWithDebInfo
 # /Og means something different in MSVC
@@ -167,6 +164,7 @@ endif()
 
 option(ENABLE_ASAN_UBSAN "Enable Clang address & undefined behavior sanitizer for nvim binary." OFF)
 option(ENABLE_MSAN "Enable Clang memory sanitizer for nvim binary." OFF)
+# TSAN exists to test Luv threads.
 option(ENABLE_TSAN "Enable Clang thread sanitizer for nvim binary." OFF)
 
 if((ENABLE_ASAN_UBSAN AND ENABLE_MSAN)
@@ -269,7 +267,7 @@ add_custom_target(lintcommit
 add_dependencies(lintcommit nvim_bin)
 
 add_custom_target(lint)
-add_dependencies(lint lintc lintlua lintsh lintcommit lintdoc)
+add_dependencies(lint lintc lintlua lintsh lintcommit)
 
 # Format
 add_glob_target(
@@ -303,8 +301,8 @@ if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
 ExternalProject_Add(uncrustify
-  URL https://github.com/uncrustify/uncrustify/archive/uncrustify-0.78.1.tar.gz
-  URL_HASH SHA256=ecaf4c0adca14c36dfffa30bc28e69865115ecd602c90eb16a8cddccb41caad2
+  URL https://github.com/uncrustify/uncrustify/archive/uncrustify-0.79.0.tar.gz
+  URL_HASH SHA256=e7afaeabf636b7f0ce4e3e9747b95f7bd939613a8db49579755dddf44fedca5f
   DOWNLOAD_DIR ${DEPS_DOWNLOAD_DIR}/uncrustify
   CMAKE_ARGS ${DEPS_CMAKE_ARGS}
   EXCLUDE_FROM_ALL TRUE
