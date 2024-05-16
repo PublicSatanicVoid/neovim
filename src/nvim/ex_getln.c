@@ -1968,7 +1968,7 @@ static int command_line_handle_key(CommandLineState *s)
     return command_line_not_changed(s);                 // Ignore mouse
 
   case K_MIDDLEMOUSE:
-    cmdline_paste(eval_has_provider("clipboard") ? '*' : 0, true, true);
+    cmdline_paste(eval_has_provider("clipboard", false) ? '*' : 0, true, true);
     redrawcmd();
     return command_line_changed(s);
 
@@ -3449,9 +3449,11 @@ void cmdline_screen_cleared(void)
 /// called by ui_flush, do what redraws necessary to keep cmdline updated.
 void cmdline_ui_flush(void)
 {
-  if (!ui_has(kUICmdline)) {
+  static bool flushing = false;
+  if (!ui_has(kUICmdline) || flushing) {
     return;
   }
+  flushing = true;
   int level = ccline.level;
   CmdlineInfo *line = &ccline;
   while (level > 0 && line) {
@@ -3466,6 +3468,7 @@ void cmdline_ui_flush(void)
     }
     line = line->prev_ccline;
   }
+  flushing = false;
 }
 
 // Put a character on the command line.  Shifts the following text to the
@@ -4587,7 +4590,7 @@ char *script_get(exarg_T *const eap, size_t *const lenp)
 {
   char *cmd = eap->arg;
 
-  if (cmd[0] != '<' || cmd[1] != '<' || eap->getline == NULL) {
+  if (cmd[0] != '<' || cmd[1] != '<' || eap->ea_getline == NULL) {
     *lenp = strlen(eap->arg);
     return eap->skip ? NULL : xmemdupz(eap->arg, *lenp);
   }

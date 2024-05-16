@@ -1,11 +1,13 @@
-local helpers = require('test.functional.helpers')(after_each)
-local exec_lua = helpers.exec_lua
-local eq = helpers.eq
-local neq = helpers.neq
-local eval = helpers.eval
-local command = helpers.command
-local clear = helpers.clear
-local api = helpers.api
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
+
+local exec_lua = n.exec_lua
+local eq = t.eq
+local neq = t.neq
+local eval = n.eval
+local command = n.command
+local clear = n.clear
+local api = n.api
 
 describe('vim.highlight.on_yank', function()
   before_each(function()
@@ -19,7 +21,7 @@ describe('vim.highlight.on_yank', function()
       vim.cmd('bwipeout!')
     ]])
     vim.uv.sleep(10)
-    helpers.feed('<cr>') -- avoid hang if error message exists
+    n.feed('<cr>') -- avoid hang if error message exists
     eq('', eval('v:errmsg'))
   end)
 
@@ -41,9 +43,9 @@ describe('vim.highlight.on_yank', function()
       vim.api.nvim_buf_set_mark(0,"]",1,1,{})
       vim.highlight.on_yank({timeout = math.huge, on_macro = true, event = {operator = "y"}})
     ]])
-    neq({}, api.nvim_win_get_ns(0))
+    neq({}, api.nvim__win_get_ns(0))
     command('wincmd w')
-    eq({}, api.nvim_win_get_ns(0))
+    eq({}, api.nvim__win_get_ns(0))
   end)
 
   it('removes old highlight if new one is created before old one times out', function()
@@ -53,7 +55,7 @@ describe('vim.highlight.on_yank', function()
       vim.api.nvim_buf_set_mark(0,"]",1,1,{})
       vim.highlight.on_yank({timeout = math.huge, on_macro = true, event = {operator = "y"}})
     ]])
-    neq({}, api.nvim_win_get_ns(0))
+    neq({}, api.nvim__win_get_ns(0))
     command('wincmd w')
     exec_lua([[
       vim.api.nvim_buf_set_mark(0,"[",1,1,{})
@@ -61,6 +63,6 @@ describe('vim.highlight.on_yank', function()
       vim.highlight.on_yank({timeout = math.huge, on_macro = true, event = {operator = "y"}})
     ]])
     command('wincmd w')
-    eq({}, api.nvim_win_get_ns(0))
+    eq({}, api.nvim__win_get_ns(0))
   end)
 end)

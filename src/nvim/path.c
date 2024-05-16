@@ -999,7 +999,7 @@ static void uniquefy_paths(garray_T *gap, char *pattern)
       memmove(path, path_cutoff, strlen(path_cutoff) + 1);
     } else {
       // Here all files can be reached without path, so get shortest
-      // unique path.  We start at the end of the path. */
+      // unique path.  We start at the end of the path.
       char *pathsep_p = path + len - 1;
       while (find_previous_pathsep(path, &pathsep_p)) {
         if (vim_regexec(&regmatch, pathsep_p + 1, 0)
@@ -2301,7 +2301,9 @@ int path_full_dir_name(char *directory, char *buffer, size_t len)
       retval = FAIL;
     } else {
       xstrlcpy(buffer, old_dir, len);
-      append_path(buffer, directory, len);
+      if (append_path(buffer, directory, len) == FAIL) {
+        retval = FAIL;
+      }
     }
   } else if (os_dirname(buffer, len) == FAIL) {
     // Do not return immediately since we are in the wrong directory.
@@ -2443,7 +2445,7 @@ void path_guess_exepath(const char *argv0, char *buf, size_t bufsize)
       if (dir_len + 1 > sizeof(NameBuff)) {
         continue;
       }
-      xstrlcpy(NameBuff, dir, dir_len + 1);
+      xmemcpyz(NameBuff, dir, dir_len);
       xstrlcat(NameBuff, PATHSEPSTR, sizeof(NameBuff));
       xstrlcat(NameBuff, argv0, sizeof(NameBuff));
       if (os_can_exe(NameBuff, NULL, false)) {

@@ -345,7 +345,7 @@ int get_lambda_tv(char **arg, typval_T *rettv, evalarg_T *evalarg)
     char *p = xmalloc(len);
     ((char **)(newlines.ga_data))[newlines.ga_len++] = p;
     STRCPY(p, "return ");
-    xstrlcpy(p + 7, start, (size_t)(end - start) + 1);
+    xmemcpyz(p + 7, start, (size_t)(end - start));
     if (strstr(p + 7, "a:") == NULL) {
       // No a: variables are used for sure.
       flags |= FC_NOARGS;
@@ -2365,7 +2365,7 @@ void ex_function(exarg_T *eap)
   // Read the body of the function, until ":endfunction" is found.
   if (KeyTyped) {
     // Check if the function already exists, don't let the user type the
-    // whole function before telling him it doesn't work!  For a script we
+    // whole function before telling them it doesn't work!  For a script we
     // need to skip the body to be able to find what follows.
     if (!eap->skip && !eap->forceit) {
       if (fudi.fd_dict != NULL && fudi.fd_newkey == NULL) {
@@ -2409,10 +2409,10 @@ void ex_function(exarg_T *eap)
       }
     } else {
       xfree(line_to_free);
-      if (eap->getline == NULL) {
+      if (eap->ea_getline == NULL) {
         theline = getcmdline(':', 0, indent, do_concat);
       } else {
-        theline = eap->getline(':', eap->cookie, indent, do_concat);
+        theline = eap->ea_getline(':', eap->cookie, indent, do_concat);
       }
       line_to_free = theline;
     }
@@ -2433,7 +2433,7 @@ void ex_function(exarg_T *eap)
     }
 
     // Detect line continuation: SOURCING_LNUM increased more than one.
-    linenr_T sourcing_lnum_off = get_sourced_lnum(eap->getline, eap->cookie);
+    linenr_T sourcing_lnum_off = get_sourced_lnum(eap->ea_getline, eap->cookie);
     if (SOURCING_LNUM < sourcing_lnum_off) {
       sourcing_lnum_off -= SOURCING_LNUM;
     } else {
@@ -2576,11 +2576,13 @@ void ex_function(exarg_T *eap)
       //       and ":let [a, b] =<< [trim] EOF"
       arg = p;
       if (checkforcmd(&arg, "let", 2)) {
-        while (vim_strchr("$@&", *arg) != NULL) {
-          arg++;
+        int var_count = 0;
+        int semicolon = 0;
+        arg = (char *)skip_var_list(arg, &var_count, &semicolon, true);
+        if (arg != NULL) {
+          arg = skipwhite(arg);
         }
-        arg = skipwhite(find_name_end(arg, NULL, NULL, FNE_INCL_BR));
-        if (arg[0] == '=' && arg[1] == '<' && arg[2] == '<') {
+        if (arg != NULL && strncmp(arg, "=<<", 3) == 0) {
           p = skipwhite(arg + 3);
           while (true) {
             if (strncmp(p, "trim", 4) == 0) {

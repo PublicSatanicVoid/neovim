@@ -71,7 +71,7 @@ void nvim_win_set_buf(Window window, Buffer buffer, Error *err)
     api_set_error(err, kErrorTypeException, "%s", e_cmdwin);
     return;
   }
-  win_set_buf(win, buf, false, err);
+  win_set_buf(win, buf, err);
 }
 
 /// Gets the (1,0)-indexed, buffer-relative cursor position for a given window
@@ -148,7 +148,7 @@ void nvim_win_set_cursor(Window window, ArrayOf(Integer, 2) pos, Error *err)
   switchwin_T switchwin;
   switch_win(&switchwin, win, NULL, true);
   update_topline(curwin);
-  setcursor_mayforce(true);
+  validate_cursor(curwin);
   restore_win(&switchwin, true);
 
   redraw_later(win, UPD_VALID);

@@ -221,7 +221,7 @@ static void changed_lines_invalidate_win(win_T *wp, linenr_T lnum, colnr_T col, 
 void changed_lines_invalidate_buf(buf_T *buf, linenr_T lnum, colnr_T col, linenr_T lnume,
                                   linenr_T xtra)
 {
-  FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
+  FOR_ALL_TAB_WINDOWS(tp, wp) {
     if (wp->w_buffer == buf) {
       changed_lines_invalidate_win(wp, lnum, col, lnume, xtra);
     }
@@ -342,9 +342,8 @@ static void changed_common(buf_T *buf, linenr_T lnum, colnr_T col, linenr_T lnum
           && (last < wp->w_topline
               || (wp->w_topline >= lnum
                   && wp->w_topline < lnume
-                  && win_linetabsize(wp, wp->w_topline, ml_get(wp->w_topline), MAXCOL)
-                  <= (wp->w_skipcol
-                      + sms_marker_overlap(wp, win_col_off(wp) - win_col_off2(wp)))))) {
+                  && win_linetabsize(wp, wp->w_topline, ml_get_buf(buf, wp->w_topline), MAXCOL)
+                  <= (wp->w_skipcol + sms_marker_overlap(wp, -1))))) {
         wp->w_skipcol = 0;
       }
 
@@ -1491,7 +1490,7 @@ bool open_line(int dir, int flags, int second_line_indent, bool *did_do_comment)
       leader = xmalloc((size_t)bytes);
       allocated = leader;  // remember to free it later
 
-      xstrlcpy(leader, saved_line, (size_t)lead_len + 1);
+      xmemcpyz(leader, saved_line, (size_t)lead_len);
 
       // TODO(vim): handle multi-byte and double width chars
       for (int li = 0; li < comment_start; li++) {

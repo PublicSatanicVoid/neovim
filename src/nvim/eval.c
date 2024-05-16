@@ -17,6 +17,7 @@
 #include "nvim/autocmd.h"
 #include "nvim/buffer.h"
 #include "nvim/buffer_defs.h"
+#include "nvim/change.h"
 #include "nvim/channel.h"
 #include "nvim/charset.h"
 #include "nvim/cmdexpand_defs.h"
@@ -763,8 +764,8 @@ void fill_evalarg_from_eap(evalarg_T *evalarg, exarg_T *eap, bool skip)
     return;
   }
 
-  if (getline_equal(eap->getline, eap->cookie, getsourceline)) {
-    evalarg->eval_getline = eap->getline;
+  if (getline_equal(eap->ea_getline, eap->cookie, getsourceline)) {
+    evalarg->eval_getline = eap->ea_getline;
     evalarg->eval_cookie = eap->cookie;
   }
 }
@@ -968,12 +969,12 @@ int skip_expr(char **pp, evalarg_T *const evalarg)
 
 /// Convert "tv" to a string.
 ///
-/// @param convert  when true convert a List into a sequence of lines.
+/// @param join_list  when true convert a List into a sequence of lines.
 ///
 /// @return  an allocated string.
-static char *typval2string(typval_T *tv, bool convert)
+static char *typval2string(typval_T *tv, bool join_list)
 {
-  if (convert && tv->v_type == VAR_LIST) {
+  if (join_list && tv->v_type == VAR_LIST) {
     garray_T ga;
     ga_init(&ga, (int)sizeof(char), 80);
     if (tv->vval.v_list != NULL) {
@@ -984,29 +985,38 @@ static char *typval2string(typval_T *tv, bool convert)
     }
     ga_append(&ga, NUL);
     return (char *)ga.ga_data;
+  } else if (tv->v_type == VAR_LIST || tv->v_type == VAR_DICT) {
+    return encode_tv2string(tv, NULL);
   }
   return xstrdup(tv_get_string(tv));
 }
 
 /// Top level evaluation function, returning a string.
 ///
-/// @param convert  when true convert a List into a sequence of lines.
+/// @param join_list  when true convert a List into a sequence of lines.
 ///
 /// @return  pointer to allocated memory, or NULL for failure.
-char *eval_to_string(char *arg, bool convert)
+char *eval_to_string_eap(char *arg, bool join_list, exarg_T *eap)
 {
   typval_T tv;
   char *retval;
 
-  if (eval0(arg, &tv, NULL, &EVALARG_EVALUATE) == FAIL) {
+  evalarg_T evalarg;
+  fill_evalarg_from_eap(&evalarg, eap, eap != NULL && eap->skip);
+  if (eval0(arg, &tv, NULL, &evalarg) == FAIL) {
     retval = NULL;
   } else {
-    retval = typval2string(&tv, convert);
+    retval = typval2string(&tv, join_list);
     tv_clear(&tv);
   }
   clear_evalarg(&EVALARG_EVALUATE, NULL);
 
   return retval;
+}
+
+char *eval_to_string(char *arg, bool join_list)
+{
+  return eval_to_string_eap(arg, join_list, NULL);
 }
 
 /// Call eval_to_string() without using current local variables and using
@@ -1892,7 +1902,7 @@ void *eval_for_line(const char *arg, bool *errp, exarg_T *eap, evalarg_T *const 
 
   *errp = true;  // Default: there is an error.
 
-  const char *expr = skip_var_list(arg, &fi->fi_varcount, &fi->fi_semicolon);
+  const char *expr = skip_var_list(arg, &fi->fi_varcount, &fi->fi_semicolon, false);
   if (expr == NULL) {
     return fi;
   }
@@ -7894,8 +7904,8 @@ hashtab_T *find_var_ht_dict(const char *name, const size_t name_len, const char 
           .channel_id = LUA_INTERNAL_CALL,
         };
         bool should_free;
-        // should_free is ignored as script_sctx will be resolved to a fnmae
-        // & new_script_item will consume it.
+        // should_free is ignored as script_ctx will be resolved to a fname
+        // and new_script_item() will consume it.
         char *sc_name = get_scriptname(last_set, &should_free);
         new_script_item(sc_name, &current_sctx.sc_sid);
       }
@@ -8202,7 +8212,7 @@ void ex_execute(exarg_T *eap)
         did_emsg = save_did_emsg;
       }
     } else if (eap->cmdidx == CMD_execute) {
-      do_cmdline(ga.ga_data, eap->getline, eap->cookie, DOCMD_NOWAIT|DOCMD_VERBOSE);
+      do_cmdline(ga.ga_data, eap->ea_getline, eap->cookie, DOCMD_NOWAIT|DOCMD_VERBOSE);
     }
   }
 
@@ -8772,7 +8782,7 @@ void script_host_eval(char *name, typval_T *argvars, typval_T *rettv)
 ///                 an empty typval_T.
 typval_T eval_call_provider(char *provider, char *method, list_T *arguments, bool discard)
 {
-  if (!eval_has_provider(provider)) {
+  if (!eval_has_provider(provider, false)) {
     semsg("E319: No \"%s\" provider found. Run \":checkhealth provider\"",
           provider);
     return (typval_T){
@@ -8830,7 +8840,7 @@ typval_T eval_call_provider(char *provider, char *method, list_T *arguments, boo
 }
 
 /// Checks if provider for feature `feat` is enabled.
-bool eval_has_provider(const char *feat)
+bool eval_has_provider(const char *feat, bool throw_if_fast)
 {
   if (!strequal(feat, "clipboard")
       && !strequal(feat, "python3")
@@ -8840,6 +8850,11 @@ bool eval_has_provider(const char *feat)
       && !strequal(feat, "ruby")
       && !strequal(feat, "node")) {
     // Avoid autoload for non-provider has() features.
+    return false;
+  }
+
+  if (throw_if_fast && !nlua_is_deferred_safe()) {
+    semsg(e_luv_api_disabled, "Vimscript function");
     return false;
   }
 
@@ -8905,6 +8920,7 @@ void invoke_prompt_callback(void)
   // Add a new line for the prompt before invoking the callback, so that
   // text can always be inserted above the last line.
   ml_append(lnum, "", 0, false);
+  appended_lines_mark(lnum, 1);
   curwin->w_cursor.lnum = lnum + 1;
   curwin->w_cursor.col = 0;
 

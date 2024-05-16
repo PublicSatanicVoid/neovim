@@ -343,7 +343,7 @@ local function setup_autocmds(bufnr)
         or cursor_row > snippet_range[3]
         or (cursor_row == snippet_range[3] and cursor_col > snippet_range[4])
       then
-        M.exit()
+        M.stop()
         return true
       end
 
@@ -362,7 +362,7 @@ local function setup_autocmds(bufnr)
       end
 
       -- The cursor is either not on a tabstop or we reached the end, so exit the session.
-      M.exit()
+      M.stop()
       return true
     end,
   })
@@ -378,7 +378,7 @@ local function setup_autocmds(bufnr)
         (snippet_range[1] == snippet_range[3] and snippet_range[2] == snippet_range[4])
         or snippet_range[3] + 1 > vim.fn.line('$')
       then
-        M.exit()
+        M.stop()
       end
 
       if not M.active() then
@@ -401,7 +401,7 @@ end
 --- Refer to https://microsoft.github.io/language-server-protocol/specification/#snippet_syntax
 --- for the specification of valid input.
 ---
---- Tabstops are highlighted with hl-SnippetTabstop.
+--- Tabstops are highlighted with |hl-SnippetTabstop|.
 ---
 --- @param input string
 function M.expand(input)
@@ -459,8 +459,7 @@ function M.expand(input)
       end
       -- Add the base indentation.
       if i > 1 then
-        line = #line ~= 0 and base_indent .. line
-          or (expandtab and (' '):rep(shiftwidth) or '\t'):rep(vim.fn.indent('.') / shiftwidth + 1)
+        line = base_indent .. line
       end
       lines[#lines + 1] = line
     end
@@ -533,37 +532,13 @@ end
 
 --- @alias vim.snippet.Direction -1 | 1
 
---- Returns `true` if there is an active snippet which can be jumped in the given direction.
---- You can use this function to navigate a snippet as follows:
+--- Jumps to the next (or previous) placeholder in the current snippet, if possible.
+---
+--- For example, map `<Tab>` to jump while a snippet is active:
 ---
 --- ```lua
 --- vim.keymap.set({ 'i', 's' }, '<Tab>', function()
----    if vim.snippet.jumpable(1) then
----      return '<cmd>lua vim.snippet.jump(1)<cr>'
----    else
----      return '<Tab>'
----    end
----  end, { expr = true })
---- ```
----
---- @param direction (vim.snippet.Direction) Navigation direction. -1 for previous, 1 for next.
---- @return boolean
-function M.jumpable(direction)
-  if not M.active() then
-    return false
-  end
-
-  return M._session:get_dest_index(direction) ~= nil
-end
-
---- Jumps within the active snippet in the given direction.
---- If the jump isn't possible, the function call does nothing.
----
---- You can use this function to navigate a snippet as follows:
----
---- ```lua
---- vim.keymap.set({ 'i', 's' }, '<Tab>', function()
----    if vim.snippet.jumpable(1) then
+---    if vim.snippet.active({ direction = 1 }) then
 ---      return '<cmd>lua vim.snippet.jump(1)<cr>'
 ---    else
 ---      return '<Tab>'
@@ -605,15 +580,41 @@ function M.jump(direction)
   setup_autocmds(M._session.bufnr)
 end
 
---- Returns `true` if there's an active snippet in the current buffer.
+--- @class vim.snippet.ActiveFilter
+--- @field direction vim.snippet.Direction Navigation direction. -1 for previous, 1 for next.
+
+--- Returns `true` if there's an active snippet in the current buffer,
+--- applying the given filter if provided.
 ---
+--- You can use this function to navigate a snippet as follows:
+---
+--- ```lua
+--- vim.keymap.set({ 'i', 's' }, '<Tab>', function()
+---    if vim.snippet.active({ direction = 1 }) then
+---      return '<cmd>lua vim.snippet.jump(1)<cr>'
+---    else
+---      return '<Tab>'
+---    end
+---  end, { expr = true })
+--- ```
+---
+--- @param filter? vim.snippet.ActiveFilter Filter to constrain the search with:
+--- - `direction` (vim.snippet.Direction): Navigation direction. Will return `true` if the snippet
+--- can be jumped in the given direction.
 --- @return boolean
-function M.active()
-  return M._session ~= nil and M._session.bufnr == vim.api.nvim_get_current_buf()
+function M.active(filter)
+  local active = M._session ~= nil and M._session.bufnr == vim.api.nvim_get_current_buf()
+
+  local in_direction = true
+  if active and filter and filter.direction then
+    in_direction = M._session:get_dest_index(filter.direction) ~= nil
+  end
+
+  return active and in_direction
 end
 
 --- Exits the current snippet.
-function M.exit()
+function M.stop()
   if not M.active() then
     return
   end

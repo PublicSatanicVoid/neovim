@@ -121,6 +121,7 @@ vim.log = {
 ---   asynchronously. Receives SystemCompleted object, see return of SystemObj:wait().
 ---
 --- @return vim.SystemObj Object with the fields:
+---   - cmd (string[]) Command name and args
 ---   - pid (integer) Process ID
 ---   - wait (fun(timeout: integer|nil): SystemCompleted) Wait for the process to complete. Upon
 ---     timeout the process is sent the KILL signal (9) and the exit code is set to 124. Cannot
@@ -1041,47 +1042,40 @@ end
 ---
 ---@return string|nil # Deprecated message, or nil if no message was shown.
 function vim.deprecate(name, alternative, version, plugin, backtrace)
-  vim.validate {
-    name = { name, 'string' },
-    alternative = { alternative, 'string', true },
-    version = { version, 'string', true },
-    plugin = { plugin, 'string', true },
-  }
   plugin = plugin or 'Nvim'
+  local will_be_removed = 'will be removed'
 
   -- Only issue warning if feature is hard-deprecated as specified by MAINTAIN.md.
-  -- e.g., when planned to be removed in version = '0.12' (soft-deprecated since 0.10-dev),
-  -- show warnings since 0.11, including 0.11-dev (hard_deprecated_since = 0.11-dev).
+  -- Example: if removal_version is 0.12 (soft-deprecated since 0.10-dev), show warnings starting at
+  -- 0.11, including 0.11-dev
   if plugin == 'Nvim' then
-    local current_version = vim.version() ---@type vim.Version
-    local removal_version = assert(vim.version.parse(version))
-    local is_hard_deprecated ---@type boolean
+    local major, minor = version:match('(%d+)%.(%d+)')
+    major, minor = tonumber(major), tonumber(minor)
 
-    if removal_version.minor > 0 then
-      local hard_deprecated_since = assert(vim.version._version({
-        major = removal_version.major,
-        minor = removal_version.minor - 1,
-        patch = 0,
-        prerelease = 'dev', -- Show deprecation warnings in devel (nightly) version as well
-      }))
-      is_hard_deprecated = (current_version >= hard_deprecated_since)
-    else
-      -- Assume there will be no next minor version before bumping up the major version;
-      -- therefore we can always show a warning.
-      assert(removal_version.minor == 0, vim.inspect(removal_version))
-      is_hard_deprecated = true
-    end
-
+    local hard_deprecated_since = string.format('nvim-%d.%d', major, minor - 1)
+    -- Assume there will be no next minor version before bumping up the major version
+    local is_hard_deprecated = minor == 0 or vim.fn.has(hard_deprecated_since) == 1
     if not is_hard_deprecated then
       return
     end
+
+    local removal_version = string.format('nvim-%d.%d', major, minor)
+    will_be_removed = vim.fn.has(removal_version) == 1 and 'was removed' or will_be_removed
+  else
+    vim.validate {
+      name = { name, 'string' },
+      alternative = { alternative, 'string', true },
+      version = { version, 'string', true },
+      plugin = { plugin, 'string', true },
+    }
   end
 
   local msg = ('%s is deprecated'):format(name)
   msg = alternative and ('%s, use %s instead.'):format(msg, alternative) or (msg .. '.')
-  msg = ('%s%s\nThis feature will be removed in %s version %s'):format(
+  msg = ('%s%s\nFeature %s in %s %s'):format(
     msg,
     (plugin == 'Nvim' and ' :help deprecated' or ''),
+    will_be_removed,
     plugin,
     version
   )

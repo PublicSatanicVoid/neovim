@@ -1283,13 +1283,9 @@ func Test_vert_scroll_cmds()
   exe "normal \<C-D>"
   call assert_equal(46, line('.'))
   exe "normal \<C-U>"
-  call assert_equal(36, line('w0'))
-  call assert_equal(46, line('.'))
+  call assert_equal(36, line('.'))
   exe "normal \<C-U>"
-  call assert_equal(1,  line('w0'))
-  call assert_equal(40, line('.'))
-  exe "normal \<C-U>"
-  call assert_equal(30, line('.'))
+  call assert_equal(1, line('.'))
   exe "normal \<C-U>"
   call assert_equal(1, line('.'))
   set scroll&
@@ -1310,8 +1306,9 @@ func Test_vert_scroll_cmds()
   call assert_equal(50, line('.'))
   call assert_equal(100, line('w$'))
   normal z.
+  let lnum = winline()
   exe "normal \<C-D>"
-  call assert_equal(1, winline())
+  call assert_equal(lnum, winline())
   call assert_equal(50, line('.'))
   normal zt
   exe "normal \<C-D>"
@@ -3080,8 +3077,7 @@ func Test_normal42_halfpage()
   call assert_equal(2, &scroll)
   set scroll=5
   exe "norm! \<c-u>"
-  call assert_equal('3', getline('w0'))
-  call assert_equal('8', getline('.'))
+  call assert_equal('3', getline('.'))
   1
   set scrolloff=5
   exe "norm! \<c-d>"
@@ -3827,8 +3823,8 @@ func Test_normal_vert_scroll_longline()
   call assert_equal(11, line('.'))
   call assert_equal(1, winline())
   exe "normal \<C-B>"
-  call assert_equal(10, line('.'))
-  call assert_equal(10, winline())
+  call assert_equal(11, line('.'))
+  call assert_equal(5, winline())
   exe "normal \<C-B>\<C-B>"
   call assert_equal(5, line('.'))
   call assert_equal(5, winline())
@@ -4224,4 +4220,72 @@ func Test_single_line_scroll()
   call prop_type_delete(vt)
 endfunc
 
+" Test for zb in buffer with a single line and filler lines
+func Test_single_line_filler_zb()
+  call setline(1, ['', 'foobar one two three'])
+  diffthis
+  new
+  call setline(1, ['foobar one two three'])
+  diffthis
+
+  " zb scrolls to reveal filler lines at the start of the buffer.
+  exe "normal \<C-E>zb"
+  call assert_equal(1, winsaveview().topfill)
+
+  bw!
+endfunc
+
+" Test for Ctrl-U not getting stuck at end of buffer with 'scrolloff'.
+func Test_halfpage_scrolloff_eob()
+  set scrolloff=5
+
+  call setline(1, range(1, 100))
+  exe "norm! Gzz\<C-U>zz"
+  call assert_notequal(100, line('.'))
+
+  set scrolloff&
+  bwipe!
+endfunc
+
+" Test for Ctrl-U/D moving the cursor at the buffer boundaries.
+func Test_halfpage_cursor_startend()
+  call setline(1, range(1, 100))
+  exe "norm! jztj\<C-U>"
+  call assert_equal(1, line('.'))
+  exe "norm! G\<C-Y>k\<C-D>"
+  call assert_equal(100, line('.'))
+  bwipe!
+endfunc
+
+" Test for Ctrl-F/B moving the cursor to the window boundaries.
+func Test_page_cursor_topbot()
+  10new
+  call setline(1, range(1, 100))
+  exe "norm! gg2\<C-F>"
+  call assert_equal(17, line('.'))
+  exe "norm! \<C-B>"
+  call assert_equal(18, line('.'))
+  exe "norm! \<C-B>\<C-F>"
+  call assert_equal(9, line('.'))
+  bwipe!
+endfunc
+
+" Test for Ctrl-D with long line
+func Test_halfpage_longline()
+  10new
+  call setline(1, ['long'->repeat(1000), 'short'])
+  exe "norm! \<C-D>"
+  call assert_equal(2, line('.'))
+  bwipe!
+endfunc
+
+" Test for Ctrl-E with long line and very narrow window,
+" used to cause an inifite loop
+func Test_scroll_longline_no_loop()
+  4vnew
+  setl smoothscroll number showbreak=> scrolloff=2
+  call setline(1, repeat(['Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'], 3))
+  exe "normal! \<C-E>"
+  bwipe!
+endfunc
 " vim: shiftwidth=2 sts=2 expandtab nofoldenable

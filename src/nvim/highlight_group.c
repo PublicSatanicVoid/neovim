@@ -201,8 +201,16 @@ static const char *highlight_init_both[] = {
   "default link SpecialComment Special",
   "default link Debug          Special",
   "default link Ignore         Normal",
-  "default link LspInlayHint   NonText",
-  "default link SnippetTabstop Visual",
+
+  // Built-in LSP
+  "default link LspCodeLens                 NonText",
+  "default link LspCodeLensSeparator        LspCodeLens",
+  "default link LspInlayHint                NonText",
+  "default link LspReferenceRead            LspReferenceText",
+  "default link LspReferenceText            Visual",
+  "default link LspReferenceWrite           LspReferenceText",
+  "default link LspSignatureActiveParameter Visual",
+  "default link SnippetTabstop              Visual",
 
   // Diagnostic
   "default link DiagnosticFloatingError    DiagnosticError",
@@ -1955,7 +1963,7 @@ int syn_name2id_len(const char *name, size_t len)
     return 0;
   }
 
-  // Avoid using stricmp() too much, it's slow on some systems */
+  // Avoid using stricmp() too much, it's slow on some systems
   // Avoid alloc()/free(), these are slow too.
   vim_memcpy_up(name_u, name, len);
   name_u[len] = '\0';

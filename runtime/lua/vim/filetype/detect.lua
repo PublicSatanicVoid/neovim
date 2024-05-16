@@ -458,6 +458,9 @@ end
 
 --- @type vim.filetype.mapfn
 function M.def(_, bufnr)
+  if getline(bufnr, 1):find('%%%%') then
+    return 'tex'
+  end
   if vim.g.filetype_def == 'modula2' or is_modula2(bufnr) then
     return modula2(bufnr)
   end
@@ -738,7 +741,9 @@ end
 
 --- @type vim.filetype.mapfn
 function M.inp(_, bufnr)
-  if getline(bufnr, 1):find('^%*') then
+  if getline(bufnr, 1):find('%%%%') then
+    return 'tex'
+  elseif getline(bufnr, 1):find('^%*') then
     return 'abaqus'
   else
     for _, line in ipairs(getlines(bufnr, 1, 500)) do
@@ -887,6 +892,11 @@ local function m4(contents)
     -- AmigaDos scripts
     return 'amiga'
   end
+end
+
+--- @type vim.filetype.mapfn
+function M.markdown(_, _)
+  return vim.g.filetype_md or 'markdown'
 end
 
 --- Rely on the file to start with a comment.
@@ -1131,12 +1141,14 @@ end
 --- Distinguish between "default", Prolog and Cproto prototype file.
 --- @type vim.filetype.mapfn
 function M.proto(_, bufnr)
-  -- Cproto files have a comment in the first line and a function prototype in
-  -- the second line, it always ends in ";".  Indent files may also have
-  -- comments, thus we can't match comments to see the difference.
-  -- IDL files can have a single ';' in the second line, require at least one
-  -- character before the ';'.
-  if getline(bufnr, 2):find('.;$') then
+  if getline(bufnr, 2):find('/%* Generated automatically %*/') then
+    return 'c'
+  elseif getline(bufnr, 2):find('.;$') then
+    -- Cproto files have a comment in the first line and a function prototype in
+    -- the second line, it always ends in ";".  Indent files may also have
+    -- comments, thus we can't match comments to see the difference.
+    -- IDL files can have a single ';' in the second line, require at least one
+    -- character before the ';'.
     return 'cpp'
   end
   -- Recognize Prolog by specific text in the first non-empty line;
@@ -1572,6 +1584,26 @@ function M.typ(_, bufnr)
   end
 
   return 'typst'
+end
+
+--- @type vim.filetype.mapfn
+function M.uci(_, bufnr)
+  -- Return "uci" iff the file has a config or package statement near the
+  -- top of the file and all preceding lines were comments or blank.
+  for _, line in ipairs(getlines(bufnr, 1, 3)) do
+    -- Match a config or package statement at the start of the line.
+    if
+      line:find('^%s*[cp]%s+%S')
+      or line:find('^%s*config%s+%S')
+      or line:find('^%s*package%s+%S')
+    then
+      return 'uci'
+    end
+    -- Match a line that is either all blank or blank followed by a comment
+    if not (line:find('^%s*$') or line:find('^%s*#')) then
+      break
+    end
+  end
 end
 
 -- Determine if a .v file is Verilog, V, or Coq
