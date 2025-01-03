@@ -12,6 +12,7 @@
 #include "nvim/charset.h"
 #include "nvim/digraph.h"
 #include "nvim/drawscreen.h"
+#include "nvim/errors.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval.h"
 #include "nvim/ex_cmds_defs.h"
@@ -21,7 +22,6 @@
 #include "nvim/getchar.h"
 #include "nvim/gettext_defs.h"
 #include "nvim/globals.h"
-#include "nvim/highlight.h"
 #include "nvim/highlight_defs.h"
 #include "nvim/keycodes.h"
 #include "nvim/mapping.h"
@@ -1706,7 +1706,7 @@ static void digraph_header(const char *msg)
   if (msg_col > 0) {
     msg_putchar('\n');
   }
-  msg_outtrans(msg, HL_ATTR(HLF_CM));
+  msg_outtrans(msg, HLF_CM, false);
   msg_putchar('\n');
 }
 
@@ -1714,6 +1714,7 @@ void listdigraphs(bool use_headers)
 {
   result_T previous = 0;
 
+  msg_ext_set_kind("list_cmd");
   msg_putchar('\n');
 
   const digr_T *dp = digraphdefault;
@@ -1860,24 +1861,24 @@ static void printdigraph(const digr_T *dp, result_T *previous)
   *p++ = (char)dp->char2;
   *p++ = ' ';
   *p = NUL;
-  msg_outtrans(buf, 0);
+  msg_outtrans(buf, 0, false);
   p = buf;
 
   // add a space to draw a composing char on
-  if (utf_iscomposing(dp->result)) {
+  if (utf_iscomposing_first(dp->result)) {
     *p++ = ' ';
   }
   p += utf_char2bytes(dp->result, p);
 
   *p = NUL;
-  msg_outtrans(buf, HL_ATTR(HLF_8));
+  msg_outtrans(buf, HLF_8, false);
   p = buf;
   if (char2cells(dp->result) == 1) {
     *p++ = ' ';
   }
   assert(p >= buf);
   vim_snprintf(p, sizeof(buf) - (size_t)(p - buf), " %3d", dp->result);
-  msg_outtrans(buf, 0);
+  msg_outtrans(buf, 0, false);
 }
 
 /// Get the two digraph characters from a typval.
@@ -1953,16 +1954,16 @@ void f_digraph_get(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 /// "digraph_getlist()" function
 void f_digraph_getlist(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
+  if (tv_check_for_opt_bool_arg(argvars, 0) == FAIL) {
+    return;
+  }
+
   bool flag_list_all;
 
   if (argvars[0].v_type == VAR_UNKNOWN) {
     flag_list_all = false;
   } else {
-    bool error = false;
-    varnumber_T flag = tv_get_number_chk(&argvars[0], &error);
-    if (error) {
-      return;
-    }
+    varnumber_T flag = tv_get_bool(&argvars[0]);
     flag_list_all = flag != 0;
   }
 
@@ -2197,7 +2198,7 @@ bool get_keymap_str(win_T *wp, char *fmt, char *buf, int len)
   curwin = wp;
   STRCPY(buf, "b:keymap_name");       // must be writable
   emsg_skip++;
-  char *s = p = eval_to_string(buf, false);
+  char *s = p = eval_to_string(buf, false, false);
   emsg_skip--;
   curbuf = old_curbuf;
   curwin = old_curwin;

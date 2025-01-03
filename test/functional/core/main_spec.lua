@@ -89,7 +89,6 @@ describe('command-line option', function()
     it('does not crash after reading from stdin in non-headless mode', function()
       skip(is_os('win'))
       local screen = Screen.new(40, 8)
-      screen:attach()
       local args = {
         nvim_prog_abs(),
         '-u',
@@ -104,7 +103,8 @@ describe('command-line option', function()
 
       -- Need to explicitly pipe to stdin so that the embedded Nvim instance doesn't try to read
       -- data from the terminal #18181
-      fn.termopen(string.format([[echo "" | %s]], table.concat(args, ' ')), {
+      fn.jobstart(string.format([[echo "" | %s]], table.concat(args, ' ')), {
+        term = true,
         env = { VIMRUNTIME = os.getenv('VIMRUNTIME') },
       })
       screen:expect(
@@ -121,7 +121,7 @@ describe('command-line option', function()
       feed('i:cq<CR>')
       screen:expect([[
                                                 |
-        [Process exited 1]{2: }                     |
+        [Process exited 1]^                      |
                                                 |*5
         {5:-- TERMINAL --}                          |
       ]])
@@ -189,8 +189,30 @@ describe('command-line option', function()
 
   it('nvim -v, :version', function()
     matches('Run ":verbose version"', fn.execute(':version'))
-    matches('Compilation: .*Run :checkhealth', fn.execute(':verbose version'))
+    matches('fall%-back for %$VIM: .*Run :checkhealth', fn.execute(':verbose version'))
     matches('Run "nvim %-V1 %-v"', fn.system({ nvim_prog_abs(), '-v' }))
-    matches('Compilation: .*Run :checkhealth', fn.system({ nvim_prog_abs(), '-V1', '-v' }))
+    matches('fall%-back for %$VIM: .*Run :checkhealth', fn.system({ nvim_prog_abs(), '-V1', '-v' }))
   end)
+
+  if is_os('win') then
+    for _, prefix in ipairs({ '~/', '~\\' }) do
+      it('expands ' .. prefix .. ' on Windows', function()
+        local fname = os.getenv('USERPROFILE') .. '\\nvim_test.txt'
+        finally(function()
+          os.remove(fname)
+        end)
+        write_file(fname, 'some text')
+        eq(
+          'some text',
+          fn.system({
+            nvim_prog_abs(),
+            '-es',
+            '+%print',
+            '+q',
+            prefix .. 'nvim_test.txt',
+          }):gsub('\n', '')
+        )
+      end)
+    end
+  end
 end)

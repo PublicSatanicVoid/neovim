@@ -27,7 +27,6 @@ local sleep = vim.uv.sleep
 local startswith = vim.startswith
 local write_file = t.write_file
 local api = n.api
-local alter_slashes = n.alter_slashes
 local is_os = t.is_os
 local dedent = t.dedent
 local tbl_map = vim.tbl_map
@@ -40,22 +39,15 @@ local testlog = 'Xtest-startupspec-log'
 describe('startup', function()
   it('--clean', function()
     clear()
-    ok(
-      string.find(
-        alter_slashes(api.nvim_get_option_value('runtimepath', {})),
-        fn.stdpath('config'),
-        1,
-        true
-      ) ~= nil
+    matches(
+      vim.pesc(t.fix_slashes(fn.stdpath('config'))),
+      t.fix_slashes(api.nvim_get_option_value('runtimepath', {}))
     )
+
     clear('--clean')
     ok(
-      string.find(
-        alter_slashes(api.nvim_get_option_value('runtimepath', {})),
-        fn.stdpath('config'),
-        1,
-        true
-      ) == nil
+      not t.fix_slashes(api.nvim_get_option_value('runtimepath', {}))
+        :match(vim.pesc(t.fix_slashes(fn.stdpath('config'))))
     )
   end)
 
@@ -63,8 +55,10 @@ describe('startup', function()
     clear()
     local screen
     screen = Screen.new(84, 3)
-    screen:attach()
-    fn.termopen({ nvim_prog, '-u', 'NONE', '--server', eval('v:servername'), '--remote-ui' })
+    fn.jobstart(
+      { nvim_prog, '-u', 'NONE', '--server', eval('v:servername'), '--remote-ui' },
+      { term = true }
+    )
     screen:expect([[
       ^Cannot attach UI of :terminal child to its parent. (Unset $NVIM to skip this check) |
                                                                                           |*2
@@ -82,14 +76,32 @@ describe('startup', function()
     assert_log("require%('vim%._editor'%)", testfile, 100)
   end)
 
+  it('--startuptime does not crash on error #31125', function()
+    eq(
+      "E484: Can't open file .",
+      fn.system({
+        nvim_prog,
+        '-u',
+        'NONE',
+        '-i',
+        'NONE',
+        '--headless',
+        '--startuptime',
+        '.',
+        '-c',
+        '42cquit',
+      })
+    )
+    eq(42, api.nvim_get_vvar('shell_error'))
+  end)
+
   it('-D does not hang #12647', function()
     clear()
     local screen
     screen = Screen.new(60, 7)
-    screen:attach()
     -- not the same colors on windows for some reason
     screen._default_attr_ids = nil
-    local id = fn.termopen({
+    local id = fn.jobstart({
       nvim_prog,
       '-u',
       'NONE',
@@ -99,6 +111,7 @@ describe('startup', function()
       'set noruler',
       '-D',
     }, {
+      term = true,
       env = {
         VIMRUNTIME = os.getenv('VIMRUNTIME'),
       },
@@ -111,6 +124,13 @@ describe('startup', function()
       [No Name]                                                   |
                                                                   |*2
     ]])
+  end)
+
+  it(':filetype detect enables filetype detection with -u NONE', function()
+    clear()
+    eq('filetype detection:OFF  plugin:OFF  indent:OFF', exec_capture('filetype'))
+    command('filetype detect')
+    eq('filetype detection:ON  plugin:OFF  indent:OFF', exec_capture('filetype'))
   end)
 end)
 
@@ -261,10 +281,8 @@ describe('startup', function()
 
       -- nvim <vim args> -l foo.lua <vim args>
       assert_l_out(
-        -- luacheck: ignore 611 (Line contains only whitespaces)
         [[
             wrap
-          
           bufs:
           nvim args: 7
           lua args: { "-c", "set wrap?",
@@ -328,9 +346,8 @@ describe('startup', function()
   it('with --embed: has("ttyin")==0 has("ttyout")==0', function()
     local screen = Screen.new(25, 3)
     -- Remote UI connected by --embed.
-    screen:attach()
     -- TODO: a lot of tests in this file already use the new default color scheme.
-    -- once we do the batch update of tests to use it, remove this workarond
+    -- once we do the batch update of tests to use it, remove this workaround
     screen._default_attr_ids = nil
     command([[echo has('ttyin') has('ttyout')]])
     screen:expect([[
@@ -342,13 +359,12 @@ describe('startup', function()
 
   it('in a TTY: has("ttyin")==1 has("ttyout")==1', function()
     local screen = Screen.new(25, 4)
-    screen:attach()
     screen._default_attr_ids = nil
     if is_os('win') then
       command([[set shellcmdflag=/s\ /c shellxquote=\"]])
     end
     -- Running in :terminal
-    fn.termopen({
+    fn.jobstart({
       nvim_prog,
       '-u',
       'NONE',
@@ -359,6 +375,7 @@ describe('startup', function()
       '-c',
       'echo has("ttyin") has("ttyout")',
     }, {
+      term = true,
       env = {
         VIMRUNTIME = os.getenv('VIMRUNTIME'),
       },
@@ -381,13 +398,14 @@ describe('startup', function()
       os.remove('Xtest_startup_ttyout')
     end)
     -- Running in :terminal
-    fn.termopen(
+    fn.jobstart(
       (
         [["%s" -u NONE -i NONE --cmd "%s"]]
         .. [[ -c "call writefile([has('ttyin'), has('ttyout')], 'Xtest_startup_ttyout')"]]
         .. [[ -c q | cat -v]]
       ):format(nvim_prog, nvim_set),
       {
+        term = true,
         env = {
           VIMRUNTIME = os.getenv('VIMRUNTIME'),
         },
@@ -400,9 +418,6 @@ describe('startup', function()
         read_file('Xtest_startup_ttyout')
       )
     end)
-    if is_os('win') then
-      assert_log('stream write failed. RPC canceled; closing channel', testlog)
-    end
   end)
 
   it('input from pipe: has("ttyin")==0 has("ttyout")==1', function()
@@ -415,7 +430,7 @@ describe('startup', function()
       os.remove('Xtest_startup_ttyout')
     end)
     -- Running in :terminal
-    fn.termopen(
+    fn.jobstart(
       (
         [[echo foo | ]] -- Input from a pipe.
         .. [["%s" -u NONE -i NONE --cmd "%s"]]
@@ -423,6 +438,7 @@ describe('startup', function()
         .. [[ -c q -- -]]
       ):format(nvim_prog, nvim_set),
       {
+        term = true,
         env = {
           VIMRUNTIME = os.getenv('VIMRUNTIME'),
         },
@@ -435,27 +451,24 @@ describe('startup', function()
         read_file('Xtest_startup_ttyout')
       )
     end)
-    if is_os('win') then
-      assert_log('stream write failed. RPC canceled; closing channel', testlog)
-    end
   end)
 
   it('input from pipe (implicit) #7679', function()
     clear({ env = { NVIM_LOG_FILE = testlog } })
     local screen = Screen.new(25, 4)
-    screen:attach()
     screen._default_attr_ids = nil
     if is_os('win') then
       command([[set shellcmdflag=/s\ /c shellxquote=\"]])
     end
     -- Running in :terminal
-    fn.termopen(
+    fn.jobstart(
       (
         [[echo foo | ]]
         .. [["%s" -u NONE -i NONE --cmd "%s"]]
         .. [[ -c "echo has('ttyin') has('ttyout')"]]
       ):format(nvim_prog, nvim_set),
       {
+        term = true,
         env = {
           VIMRUNTIME = os.getenv('VIMRUNTIME'),
         },
@@ -608,9 +621,8 @@ describe('startup', function()
   it('ENTER dismisses early message #7967', function()
     local screen
     screen = Screen.new(60, 6)
-    screen:attach()
     screen._default_attr_ids = nil
-    local id = fn.termopen({
+    local id = fn.jobstart({
       nvim_prog,
       '-u',
       'NONE',
@@ -621,6 +633,7 @@ describe('startup', function()
       '--cmd',
       'let g:foo = g:bar',
     }, {
+      term = true,
       env = {
         VIMRUNTIME = os.getenv('VIMRUNTIME'),
       },
@@ -706,7 +719,6 @@ describe('startup', function()
   it('-e/-E interactive #7679', function()
     clear('-e')
     local screen = Screen.new(25, 3)
-    screen:attach()
     feed("put ='from -e'<CR>")
     screen:expect([[
       :put ='from -e'          |
@@ -716,7 +728,6 @@ describe('startup', function()
 
     clear('-E')
     screen = Screen.new(25, 3)
-    screen:attach()
     feed("put ='from -E'<CR>")
     screen:expect([[
       :put ='from -E'          |
@@ -726,9 +737,8 @@ describe('startup', function()
   end)
 
   it('-e sets ex mode', function()
-    local screen = Screen.new(25, 3)
     clear('-e')
-    screen:attach()
+    local screen = Screen.new(25, 3)
     -- Verify we set the proper mode both before and after :vi.
     feed('put =mode(1)<CR>vi<CR>:put =mode(1)<CR>')
     screen:expect([[
@@ -780,7 +790,6 @@ describe('startup', function()
   it("sets 'shortmess' when loading other tabs", function()
     clear({ args = { '-p', 'a', 'b', 'c' } })
     local screen = Screen.new(25, 4)
-    screen:attach()
     screen:expect({
       grid = [[
         {1: a }{2: b  c }{3:               }{2:X}|
@@ -1143,9 +1152,9 @@ describe('user config init', function()
         eq('---', eval('g:exrc_file'))
 
         local screen = Screen.new(50, 8)
-        screen:attach()
         screen._default_attr_ids = nil
-        fn.termopen({ nvim_prog }, {
+        fn.jobstart({ nvim_prog }, {
+          term = true,
           env = {
             VIMRUNTIME = os.getenv('VIMRUNTIME'),
           },
@@ -1154,7 +1163,7 @@ describe('user config init', function()
         -- `i` to enter Terminal mode, `a` to allow
         feed('ia')
         screen:expect([[
-                                                            |
+          ^                                                  |
           ~                                                 |*4
           [No Name]                       0,0-1          All|
                                                             |
@@ -1163,7 +1172,7 @@ describe('user config init', function()
         feed(':echo g:exrc_file<CR>')
         screen:expect(string.format(
           [[
-                                                            |
+          ^                                                  |
           ~                                                 |*4
           [No Name]                       0,0-1          All|
           %s%s|
@@ -1331,31 +1340,59 @@ describe('runtime:', function()
   end)
 
   it("loads ftdetect/*.{vim,lua} respecting 'rtp' order", function()
-    local ftdetect_folder = table.concat({ xconfig, 'nvim', 'ftdetect' }, pathsep)
-    local after_ftdetect_folder = table.concat({ xconfig, 'nvim', 'after', 'ftdetect' }, pathsep)
+    local rtp_folder = table.concat({ xconfig, 'nvim' }, pathsep)
+    local after_rtp_folder = table.concat({ rtp_folder, 'after' }, pathsep)
+    local ftdetect_folder = table.concat({ rtp_folder, 'ftdetect' }, pathsep)
+    local after_ftdetect_folder = table.concat({ after_rtp_folder, 'ftdetect' }, pathsep)
     mkdir_p(ftdetect_folder)
     mkdir_p(after_ftdetect_folder)
     finally(function()
       rmdir(ftdetect_folder)
       rmdir(after_ftdetect_folder)
     end)
+    write_file(table.concat({ rtp_folder, 'scripts.vim' }, pathsep), [[let g:aseq ..= 'S']])
+    write_file(table.concat({ after_rtp_folder, 'scripts.vim' }, pathsep), [[let g:aseq ..= 's']])
     -- A .lua file is loaded after a .vim file if they only differ in extension.
     -- All files in after/ftdetect/ are loaded after all files in ftdetect/.
-    write_file(table.concat({ ftdetect_folder, 'new-ft.vim' }, pathsep), [[let g:seq ..= 'A']])
+    write_file(
+      table.concat({ ftdetect_folder, 'new-ft.vim' }, pathsep),
+      [[
+        let g:seq ..= 'A'
+        autocmd BufRead,BufNewFile FTDETECT let g:aseq ..= 'A'
+      ]]
+    )
     write_file(
       table.concat({ ftdetect_folder, 'new-ft.lua' }, pathsep),
-      [[vim.g.seq = vim.g.seq .. 'B']]
+      [[
+        vim.g.seq = vim.g.seq .. 'B'
+        vim.api.nvim_create_autocmd({ 'BufRead', 'BufNewFile' }, {
+          pattern = 'FTDETECT',
+          command = "let g:aseq ..= 'B'",
+        })
+      ]]
     )
     write_file(
       table.concat({ after_ftdetect_folder, 'new-ft.vim' }, pathsep),
-      [[let g:seq ..= 'a']]
+      [[
+        let g:seq ..= 'a'
+        autocmd BufRead,BufNewFile FTDETECT let g:aseq ..= 'a'
+      ]]
     )
     write_file(
       table.concat({ after_ftdetect_folder, 'new-ft.lua' }, pathsep),
-      [[vim.g.seq = vim.g.seq .. 'b']]
+      [[
+        vim.g.seq = vim.g.seq .. 'b'
+        vim.api.nvim_create_autocmd({ 'BufRead', 'BufNewFile' }, {
+          pattern = 'FTDETECT',
+          command = "let g:aseq ..= 'b'",
+        })
+      ]]
     )
     clear { args_rm = { '-u' }, args = { '--cmd', 'let g:seq = ""' }, env = xenv }
     eq('ABab', eval('g:seq'))
+    command('let g:aseq = ""')
+    command('edit FTDETECT')
+    eq('SsABab', eval('g:aseq'))
   end)
 end)
 
@@ -1391,8 +1428,7 @@ describe('inccommand on ex mode', function()
     clear()
     local screen
     screen = Screen.new(60, 10)
-    screen:attach()
-    local id = fn.termopen({
+    local id = fn.jobstart({
       nvim_prog,
       '-u',
       'NONE',
@@ -1403,6 +1439,7 @@ describe('inccommand on ex mode', function()
       '-E',
       'test/README.md',
     }, {
+      term = true,
       env = { VIMRUNTIME = os.getenv('VIMRUNTIME') },
     })
     fn.chansend(id, '%s/N')

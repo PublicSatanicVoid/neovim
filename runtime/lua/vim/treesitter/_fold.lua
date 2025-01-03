@@ -30,65 +30,20 @@ function FoldInfo.new()
   }, FoldInfo)
 end
 
---- Efficiently remove items from middle of a list a list.
----
---- Calling table.remove() in a loop will re-index the tail of the table on
---- every iteration, instead this function will re-index  the table exactly
---- once.
----
---- Based on https://stackoverflow.com/questions/12394841/safely-remove-items-from-an-array-table-while-iterating/53038524#53038524
----
----@param t any[]
----@param first integer
----@param last integer
-local function list_remove(t, first, last)
-  local n = #t
-  for i = 0, n - first do
-    t[first + i] = t[last + 1 + i]
-    t[last + 1 + i] = nil
-  end
-end
-
 ---@package
 ---@param srow integer
 ---@param erow integer 0-indexed, exclusive
 function FoldInfo:remove_range(srow, erow)
-  list_remove(self.levels, srow + 1, erow)
-  list_remove(self.levels0, srow + 1, erow)
-end
-
---- Efficiently insert items into the middle of a list.
----
---- Calling table.insert() in a loop will re-index the tail of the table on
---- every iteration, instead this function will re-index  the table exactly
---- once.
----
---- Based on https://stackoverflow.com/questions/12394841/safely-remove-items-from-an-array-table-while-iterating/53038524#53038524
----
----@param t any[]
----@param first integer
----@param last integer
----@param v any
-local function list_insert(t, first, last, v)
-  local n = #t
-
-  -- Shift table forward
-  for i = n - first, 0, -1 do
-    t[last + 1 + i] = t[first + i]
-  end
-
-  -- Fill in new values
-  for i = first, last do
-    t[i] = v
-  end
+  vim._list_remove(self.levels, srow + 1, erow)
+  vim._list_remove(self.levels0, srow + 1, erow)
 end
 
 ---@package
 ---@param srow integer
 ---@param erow integer 0-indexed, exclusive
 function FoldInfo:add_range(srow, erow)
-  list_insert(self.levels, srow + 1, erow, '=')
-  list_insert(self.levels0, srow + 1, erow, -1)
+  vim._list_insert(self.levels, srow + 1, erow, -1)
+  vim._list_insert(self.levels0, srow + 1, erow, -1)
 end
 
 ---@param range Range2
@@ -114,7 +69,7 @@ local function compute_folds_levels(bufnr, info, srow, erow, parse_injections)
   srow = srow or 0
   erow = erow or api.nvim_buf_line_count(bufnr)
 
-  local parser = ts.get_parser(bufnr)
+  local parser = assert(ts.get_parser(bufnr, nil, { error = false }))
 
   parser:parse(parse_injections and { srow, erow } or nil)
 
@@ -131,24 +86,18 @@ local function compute_folds_levels(bufnr, info, srow, erow, parse_injections)
 
     -- Collect folds starting from srow - 1, because we should first subtract the folds that end at
     -- srow - 1 from the level of srow - 1 to get accurate level of srow.
-    for _, match, metadata in
-      query:iter_matches(tree:root(), bufnr, math.max(srow - 1, 0), erow, { all = true })
-    do
+    for _, match, metadata in query:iter_matches(tree:root(), bufnr, math.max(srow - 1, 0), erow) do
       for id, nodes in pairs(match) do
         if query.captures[id] == 'fold' then
           local range = ts.get_range(nodes[1], bufnr, metadata[id])
           local start, _, stop, stop_col = Range.unpack4(range)
 
-          for i = 2, #nodes, 1 do
-            local node_range = ts.get_range(nodes[i], bufnr, metadata[id])
-            local node_start, _, node_stop, node_stop_col = Range.unpack4(node_range)
-            if node_start < start then
-              start = node_start
-            end
-            if node_stop > stop then
-              stop = node_stop
-              stop_col = node_stop_col
-            end
+          if #nodes > 1 then
+            -- assumes nodes are ordered by range
+            local end_range = ts.get_range(nodes[#nodes], bufnr, metadata[id])
+            local _, _, end_stop, end_stop_col = Range.unpack4(end_range)
+            stop = end_stop
+            stop_col = end_stop_col
           end
 
           if stop_col == 0 then
@@ -268,6 +217,15 @@ end
 
 ---@package
 function FoldInfo:do_foldupdate(bufnr)
+  -- InsertLeave is not executed when <C-C> is used for exiting the insert mode, leaving
+  -- do_foldupdate untouched. If another execution of foldupdate consumes foldupdate_range, the
+  -- InsertLeave do_foldupdate gets nil foldupdate_range. In that case, skip the update. This is
+  -- correct because the update that consumed the range must have incorporated the range that
+  -- InsertLeave meant to update.
+  if not self.foldupdate_range then
+    return
+  end
+
   local srow, erow = self.foldupdate_range[1], self.foldupdate_range[2]
   self.foldupdate_range = nil
   for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
@@ -383,14 +341,13 @@ local function on_bytes(bufnr, foldinfo, start_row, start_col, old_row, old_col,
   end
 end
 
----@package
 ---@param lnum integer|nil
 ---@return string
 function M.foldexpr(lnum)
   lnum = lnum or vim.v.lnum
   local bufnr = api.nvim_get_current_buf()
 
-  local parser = vim.F.npcall(ts.get_parser, bufnr)
+  local parser = ts.get_parser(bufnr, nil, { error = false })
   if not parser then
     return '0'
   end
@@ -421,9 +378,15 @@ api.nvim_create_autocmd('OptionSet', {
   pattern = { 'foldminlines', 'foldnestmax' },
   desc = 'Refresh treesitter folds',
   callback = function()
-    for bufnr, _ in pairs(foldinfos) do
+    local buf = api.nvim_get_current_buf()
+    local bufs = vim.v.option_type == 'global' and vim.tbl_keys(foldinfos)
+      or foldinfos[buf] and { buf }
+      or {}
+    for _, bufnr in ipairs(bufs) do
       foldinfos[bufnr] = FoldInfo.new()
-      compute_folds_levels(bufnr, foldinfos[bufnr])
+      api.nvim_buf_call(bufnr, function()
+        compute_folds_levels(bufnr, foldinfos[bufnr])
+      end)
       foldinfos[bufnr]:foldupdate(bufnr, 0, api.nvim_buf_line_count(bufnr))
     end
   end,

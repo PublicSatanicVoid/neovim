@@ -59,7 +59,6 @@ describe('fileio', function()
     local screen_nvim = spawn(argv)
     set_session(screen_nvim)
     local screen = Screen.new(70, 10)
-    screen:attach()
     screen:set_default_attr_ids({
       [1] = { foreground = Screen.colors.NvimDarkGrey4 },
       [2] = { background = Screen.colors.NvimDarkGrey1, foreground = Screen.colors.NvimLightGrey3 },
@@ -276,12 +275,6 @@ describe('fileio', function()
     write_file('Xtest-overwrite-forced', 'foobar')
     command('set nofixendofline')
     local screen = Screen.new(40, 4)
-    screen:set_default_attr_ids({
-      [1] = { bold = true, foreground = Screen.colors.Blue1 },
-      [2] = { foreground = Screen.colors.Grey100, background = Screen.colors.Red },
-      [3] = { bold = true, foreground = Screen.colors.SeaGreen4 },
-    })
-    screen:attach()
     command('set shortmess-=F')
 
     command('e Xtest-overwrite-forced')
@@ -300,9 +293,9 @@ describe('fileio', function()
     -- use async feed_command because nvim basically hangs on the prompt
     feed_command('w')
     screen:expect([[
-      {2:WARNING: The file has been changed since}|
-      {2: reading it!!!}                          |
-      {3:Do you really want to write to it (y/n)?}|
+      {9:WARNING: The file has been changed since}|
+      {9: reading it!!!}                          |
+      {6:Do you really want to write to it (y/n)?}|
       ^                                        |
     ]])
 
@@ -326,11 +319,11 @@ end)
 describe('tmpdir', function()
   local tmproot_pat = [=[.*[/\\]nvim%.[^/\\]+]=]
   local testlog = 'Xtest_tmpdir_log'
-  local os_tmpdir
+  local os_tmpdir ---@type string
 
   before_each(function()
     -- Fake /tmp dir so that we can mess it up.
-    os_tmpdir = vim.uv.fs_mkdtemp(vim.fs.dirname(t.tmpname()) .. '/nvim_XXXXXXXXXX')
+    os_tmpdir = assert(vim.uv.fs_mkdtemp(vim.fs.dirname(t.tmpname(false)) .. '/nvim_XXXXXXXXXX'))
   end)
 
   after_each(function()
@@ -418,16 +411,5 @@ describe('tmpdir', function()
     eq('E5431: tempdir disappeared (2 times)', api.nvim_get_vvar('errmsg'))
     rm_tmpdir()
     eq('E5431: tempdir disappeared (3 times)', api.nvim_get_vvar('errmsg'))
-  end)
-
-  it('$NVIM_APPNAME relative path', function()
-    clear({
-      env = {
-        NVIM_APPNAME = 'a/b',
-        NVIM_LOG_FILE = testlog,
-        TMPDIR = os_tmpdir,
-      },
-    })
-    matches([=[.*[/\\]a%%b%.[^/\\]+]=], fn.tempname())
   end)
 end)

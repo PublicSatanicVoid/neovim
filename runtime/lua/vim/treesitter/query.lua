@@ -1,3 +1,6 @@
+--- @brief This Lua |treesitter-query| interface allows you to create queries and use them to parse
+--- text. See |vim.treesitter.query.parse()| for a working example.
+
 local api = vim.api
 local language = require('vim.treesitter.language')
 local memoize = vim.func._memoize
@@ -8,9 +11,9 @@ local M = {}
 ---Parsed query, see |vim.treesitter.query.parse()|
 ---
 ---@class vim.treesitter.Query
----@field lang string name of the language for this parser
+---@field lang string parser language name
 ---@field captures string[] list of (unique) capture names defined in query
----@field info vim.treesitter.QueryInfo contains information used in the query (e.g. captures, predicates, directives)
+---@field info vim.treesitter.QueryInfo query context (e.g. captures, predicates, directives)
 ---@field query TSQuery userdata query object
 local Query = {}
 Query.__index = Query
@@ -228,27 +231,34 @@ M.get = memoize('concat-2', function(lang, query_name)
   return M.parse(lang, query_string)
 end)
 
---- Parse {query} as a string. (If the query is in a file, the caller
---- should read the contents into a string before calling).
+--- Parses a {query} string and returns a `Query` object (|lua-treesitter-query|), which can be used
+--- to search the tree for the query patterns (via |Query:iter_captures()|, |Query:iter_matches()|),
+--- or inspect the query via these fields:
+---   - `captures`: a list of unique capture names defined in the query (alias: `info.captures`).
+---   - `info.patterns`: information about predicates.
 ---
---- Returns a `Query` (see |lua-treesitter-query|) object which can be used to
---- search nodes in the syntax tree for the patterns defined in {query}
---- using the `iter_captures` and `iter_matches` methods.
----
---- Exposes `info` and `captures` with additional context about {query}.
----   - `captures` contains the list of unique capture names defined in {query}.
----   - `info.captures` also points to `captures`.
----   - `info.patterns` contains information about predicates.
+--- Example (select the code then run `:'<,'>lua` to try it):
+--- ```lua
+--- local query = vim.treesitter.query.parse('vimdoc', [[
+---   ; query
+---   ((h1) @str
+---     (#trim! @str 1 1 1 1))
+--- ]])
+--- local tree = vim.treesitter.get_parser():parse()[1]
+--- for id, node, metadata in query:iter_captures(tree:root(), 0) do
+---    -- Print the node name and source text.
+---    vim.print({node:type(), vim.treesitter.get_node_text(node, vim.api.nvim_get_current_buf())})
+--- end
+--- ```
 ---
 ---@param lang string Language to use for the query
----@param query string Query in s-expr syntax
+---@param query string Query text, in s-expr syntax
 ---
 ---@return vim.treesitter.Query : Parsed query
 ---
 ---@see [vim.treesitter.query.get()]
 M.parse = memoize('concat-2', function(lang, query)
-  language.add(lang)
-
+  assert(language.add(lang))
   local ts_query = vim._ts_parse_query(lang, query)
   return Query.new(lang, ts_query)
 end)
@@ -487,8 +497,8 @@ predicate_handlers['any-vim-match?'] = predicate_handlers['any-match?']
 ---@class vim.treesitter.query.TSMetadata
 ---@field range? Range
 ---@field conceal? string
----@field [integer] vim.treesitter.query.TSMetadata
----@field [string] integer|string
+---@field [integer]? vim.treesitter.query.TSMetadata
+---@field [string]? integer|string
 
 ---@alias TSDirective fun(match: table<integer,TSNode[]>, _, _, predicate: (string|integer)[], metadata: vim.treesitter.query.TSMetadata)
 
@@ -573,12 +583,16 @@ local directive_handlers = {
 
     metadata[id].text = text:gsub(pattern, replacement)
   end,
-  -- Trim blank lines from end of the node
-  -- Example: (#trim! @fold)
-  -- TODO(clason): generalize to arbitrary whitespace removal
+  -- Trim whitespace from both sides of the node
+  -- Example: (#trim! @fold 1 1 1 1)
   ['trim!'] = function(match, _, bufnr, pred, metadata)
     local capture_id = pred[2]
     assert(type(capture_id) == 'number')
+
+    local trim_start_lines = pred[3] == '1'
+    local trim_start_cols = pred[4] == '1'
+    local trim_end_lines = pred[5] == '1' or not pred[3] -- default true for backwards compatibility
+    local trim_end_cols = pred[6] == '1'
 
     local nodes = match[capture_id]
     if not nodes or #nodes == 0 then
@@ -589,20 +603,45 @@ local directive_handlers = {
 
     local start_row, start_col, end_row, end_col = node:range()
 
-    -- Don't trim if region ends in middle of a line
-    if end_col ~= 0 then
-      return
+    local node_text = vim.split(vim.treesitter.get_node_text(node, bufnr), '\n')
+    if end_col == 0 then
+      -- get_node_text() will ignore the last line if the node ends at column 0
+      node_text[#node_text + 1] = ''
     end
 
-    while end_row >= start_row do
-      -- As we only care when end_col == 0, always inspect one line above end_row.
-      local end_line = api.nvim_buf_get_lines(bufnr, end_row - 1, end_row, true)[1]
+    local end_idx = #node_text
+    local start_idx = 1
 
-      if end_line ~= '' then
-        break
+    if trim_end_lines then
+      while end_idx > 0 and node_text[end_idx]:find('^%s*$') do
+        end_idx = end_idx - 1
+        end_row = end_row - 1
+        -- set the end position to the last column of the next line, or 0 if we just trimmed the
+        -- last line
+        end_col = end_idx > 0 and #node_text[end_idx] or 0
       end
+    end
+    if trim_end_cols then
+      if end_idx == 0 then
+        end_row = start_row
+        end_col = start_col
+      else
+        local whitespace_start = node_text[end_idx]:find('(%s*)$')
+        end_col = (whitespace_start - 1) + (end_idx == 1 and start_col or 0)
+      end
+    end
 
-      end_row = end_row - 1
+    if trim_start_lines then
+      while start_idx <= end_idx and node_text[start_idx]:find('^%s*$') do
+        start_idx = start_idx + 1
+        start_row = start_row + 1
+        start_col = 0
+      end
+    end
+    if trim_start_cols and node_text[start_idx] then
+      local _, whitespace_end = node_text[start_idx]:find('^(%s*)')
+      whitespace_end = whitespace_end or 0
+      start_col = (start_idx == 1 and start_col or 0) + whitespace_end
     end
 
     -- If this produces an invalid range, we just skip it.
@@ -620,16 +659,16 @@ local directive_handlers = {
 --- @field force? boolean
 ---
 --- Use the correct implementation of the match table where capture IDs map to
---- a list of nodes instead of a single node. Defaults to false (for backward
---- compatibility). This option will eventually become the default and removed.
+--- a list of nodes instead of a single node. Defaults to true. This option will
+--- be removed in a future release.
 --- @field all? boolean
 
 --- Adds a new predicate to be used in queries
 ---
 ---@param name string Name of the predicate, without leading #
----@param handler fun(match: table<integer,TSNode[]>, pattern: integer, source: integer|string, predicate: any[], metadata: table)
+---@param handler fun(match: table<integer,TSNode[]>, pattern: integer, source: integer|string, predicate: any[], metadata: vim.treesitter.query.TSMetadata): boolean?
 ---   - see |vim.treesitter.query.add_directive()| for argument meanings
----@param opts vim.treesitter.query.add_predicate.Opts
+---@param opts? vim.treesitter.query.add_predicate.Opts
 function M.add_predicate(name, handler, opts)
   -- Backward compatibility: old signature had "force" as boolean argument
   if type(opts) == 'boolean' then
@@ -642,7 +681,7 @@ function M.add_predicate(name, handler, opts)
     error(string.format('Overriding existing predicate %s', name))
   end
 
-  if opts.all then
+  if opts.all ~= false then
     predicate_handlers[name] = handler
   else
     --- @param match table<integer, TSNode[]>
@@ -667,7 +706,7 @@ end
 --- metadata table `metadata[capture_id].key = value`
 ---
 ---@param name string Name of the directive, without leading #
----@param handler fun(match: table<integer,TSNode[]>, pattern: integer, source: integer|string, predicate: any[], metadata: table)
+---@param handler fun(match: table<integer,TSNode[]>, pattern: integer, source: integer|string, predicate: any[], metadata: vim.treesitter.query.TSMetadata)
 ---   - match: A table mapping capture IDs to a list of captured nodes
 ---   - pattern: the index of the matching pattern in the query file
 ---   - predicate: list of strings containing the full directive being called, e.g.
@@ -819,20 +858,22 @@ local function match_id_hash(_, match)
   return (match:info())
 end
 
---- Iterate over all captures from all matches inside {node}
+--- Iterates over all captures from all matches in {node}.
 ---
---- {source} is needed if the query contains predicates; then the caller
+--- {source} is required if the query contains predicates; then the caller
 --- must ensure to use a freshly parsed tree consistent with the current
 --- text of the buffer (if relevant). {start} and {stop} can be used to limit
 --- matches inside a row range (this is typically used with root node
 --- as the {node}, i.e., to get syntax highlight matches in the current
 --- viewport). When omitted, the {start} and {stop} row values are used from the given node.
 ---
---- The iterator returns four values: a numeric id identifying the capture,
---- the captured node, metadata from any directives processing the match,
---- and the match itself.
---- The following example shows how to get captures by name:
+--- The iterator returns four values:
+--- 1. the numeric id identifying the capture
+--- 2. the captured node
+--- 3. metadata from any directives processing the match
+--- 4. the match itself
 ---
+--- Example: how to get captures by name:
 --- ```lua
 --- for id, node, metadata, match in query:iter_captures(tree:root(), bufnr, first, last) do
 ---   local name = query.captures[id] -- name of the capture in the query
@@ -894,16 +935,10 @@ end
 --- index of the pattern in the query, a table mapping capture indices to a list
 --- of nodes, and metadata from any directives processing the match.
 ---
---- WARNING: Set `all=true` to ensure all matching nodes in a match are
---- returned, otherwise only the last node in a match is returned, breaking captures
---- involving quantifiers such as `(comment)+ @comment`. The default option
---- `all=false` is only provided for backward compatibility and will be removed
---- after Nvim 0.10.
----
 --- Example:
 ---
 --- ```lua
---- for pattern, match, metadata in cquery:iter_matches(tree:root(), bufnr, 0, -1, { all = true }) do
+--- for pattern, match, metadata in cquery:iter_matches(tree:root(), bufnr, 0, -1) do
 ---   for id, nodes in pairs(match) do
 ---     local name = query.captures[id]
 ---     for _, node in ipairs(nodes) do
@@ -925,11 +960,11 @@ end
 ---   - max_start_depth (integer) if non-zero, sets the maximum start depth
 ---     for each match. This is used to prevent traversing too deep into a tree.
 ---   - match_limit (integer) Set the maximum number of in-progress matches (Default: 256).
----   - all (boolean) When set, the returned match table maps capture IDs to a list of nodes.
----     Older versions of iter_matches incorrectly mapped capture IDs to a single node, which is
----     incorrect behavior. This option will eventually become the default and removed.
+--- - all (boolean) When `false` (default `true`), the returned table maps capture IDs to a single
+---   (last) node instead of the full list of matching nodes. This option is only for backward
+---   compatibility and will be removed in a future release.
 ---
----@return (fun(): integer, table<integer, TSNode[]>, table): pattern id, match, metadata
+---@return (fun(): integer, table<integer, TSNode[]>, vim.treesitter.query.TSMetadata): pattern id, match, metadata
 function Query:iter_matches(node, source, start, stop, opts)
   opts = opts or {}
   opts.match_limit = opts.match_limit or 256
@@ -960,10 +995,10 @@ function Query:iter_matches(node, source, start, stop, opts)
 
     local captures = match:captures()
 
-    if not opts.all then
+    if opts.all == false then
       -- Convert the match table into the old buggy version for backward
-      -- compatibility. This is slow. Plugin authors, if you're reading this, set the "all"
-      -- option!
+      -- compatibility. This is slow, but we only do it when the caller explicitly opted into it by
+      -- setting `all` to `false`.
       local old_match = {} ---@type table<integer, TSNode>
       for k, v in pairs(captures or {}) do
         old_match[k] = v[#v]
@@ -1034,7 +1069,7 @@ end
 ---
 --- @param lang? string language to open the query editor for. If omitted, inferred from the current buffer's filetype.
 function M.edit(lang)
-  vim.treesitter.dev.edit_query(lang)
+  assert(vim.treesitter.dev.edit_query(lang))
 end
 
 return M

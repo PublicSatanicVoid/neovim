@@ -114,9 +114,9 @@ describe("preserve and (R)ecover with custom 'directory'", function()
   it('killing TUI process without :preserve #22096', function()
     t.skip(t.is_os('win'))
     local screen0 = Screen.new()
-    screen0:attach()
     local child_server = new_pipename()
-    fn.termopen({ nvim_prog, '-u', 'NONE', '-i', 'NONE', '--listen', child_server }, {
+    fn.jobstart({ nvim_prog, '-u', 'NONE', '-i', 'NONE', '--listen', child_server }, {
+      term = true,
       env = { VIMRUNTIME = os.getenv('VIMRUNTIME') },
     })
     screen0:expect({ any = pesc('[No Name]') }) -- Wait for the child process to start.
@@ -171,7 +171,6 @@ describe('swapfile detection', function()
     local nvim2 = spawn({ nvim_prog, '-u', 'NONE', '-i', 'NONE', '--embed' }, true, nil, true)
     set_session(nvim2)
     local screen2 = Screen.new(256, 40)
-    screen2:attach()
     screen2._default_attr_ids = nil
     exec(init)
     command('autocmd! nvim_swapfile') -- Delete the default handler (which skips the dialog).
@@ -221,6 +220,7 @@ describe('swapfile detection', function()
         .. [[%.swp"]],
     }
     feed('e') -- Chose "Edit" at the swap dialog.
+    screen2:expect({ any = pesc('E5555: API call: Vim(edit):E325: ATTENTION') })
     feed('<c-c>')
     screen2:expect(expected_no_dialog)
 
@@ -254,7 +254,6 @@ describe('swapfile detection', function()
     local nvim1 = spawn(new_argv(), true, nil, true)
     set_session(nvim1)
     local screen = Screen.new(75, 18)
-    screen:attach()
     exec(init)
     feed(':edit Xfile1\n')
 
@@ -325,7 +324,6 @@ describe('swapfile detection', function()
       [1] = { bold = true, foreground = Screen.colors.SeaGreen }, -- MoreMsg
       [2] = { background = Screen.colors.Red, foreground = Screen.colors.White }, -- ErrorMsg
     })
-    screen:attach()
 
     exec(init)
     if not swapexists then
@@ -450,9 +448,10 @@ describe('quitting swapfile dialog on startup stops TUI properly', function()
   end)
 
   it('(Q)uit at first file argument', function()
-    local chan = fn.termopen(
+    local chan = fn.jobstart(
       { nvim_prog, '-u', 'NONE', '-i', 'NONE', '--cmd', init_dir, '--cmd', init_set, testfile },
       {
+        term = true,
         env = { VIMRUNTIME = os.getenv('VIMRUNTIME') },
       }
     )
@@ -472,7 +471,7 @@ describe('quitting swapfile dialog on startup stops TUI properly', function()
   end)
 
   it('(A)bort at second file argument with -p', function()
-    local chan = fn.termopen({
+    local chan = fn.jobstart({
       nvim_prog,
       '-u',
       'NONE',
@@ -486,6 +485,7 @@ describe('quitting swapfile dialog on startup stops TUI properly', function()
       otherfile,
       testfile,
     }, {
+      term = true,
       env = { VIMRUNTIME = os.getenv('VIMRUNTIME') },
     })
     retry(nil, nil, function()
@@ -512,7 +512,7 @@ describe('quitting swapfile dialog on startup stops TUI properly', function()
       second	%s	/^  \zssecond$/
       third	%s	/^  \zsthird$/]]):format(testfile, testfile, testfile)
     )
-    local chan = fn.termopen({
+    local chan = fn.jobstart({
       nvim_prog,
       '-u',
       'NONE',
@@ -526,6 +526,7 @@ describe('quitting swapfile dialog on startup stops TUI properly', function()
       'set tags=' .. otherfile,
       '-tsecond',
     }, {
+      term = true,
       env = { VIMRUNTIME = os.getenv('VIMRUNTIME') },
     })
     retry(nil, nil, function()
@@ -535,10 +536,6 @@ describe('quitting swapfile dialog on startup stops TUI properly', function()
       )
     end)
     api.nvim_chan_send(chan, 'q')
-    retry(nil, nil, function()
-      eq('Press ENTER or type command to continue', eval("getline('$')->trim(' ', 2)"))
-    end)
-    api.nvim_chan_send(chan, '\r')
     retry(nil, nil, function()
       eq(
         { '', '[Process exited 1]', '' },
