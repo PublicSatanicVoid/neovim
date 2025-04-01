@@ -110,7 +110,7 @@ append({lnum}, {text})                                                *append()*
 <
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
                   • {text} (`string|string[]`)
 
                 Return: ~
@@ -1038,15 +1038,16 @@ chdir({dir})                                                           *chdir()*
                   (`string`)
 
 cindent({lnum})                                                      *cindent()*
-		Get the amount of indent for line {lnum} according the C
-		indenting rules, as with 'cindent'.
+		Get the amount of indent for line {lnum} according the
+		|C-indenting| rules, as with 'cindent'.
 		The indent is counted in spaces, the value of 'tabstop' is
 		relevant.  {lnum} is used just like in |getline()|.
 		When {lnum} is invalid -1 is returned.
-		See |C-indenting|.
+
+		To get or set indent of lines in a string, see |vim.text.indent()|.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
 
                 Return: ~
                   (`integer`)
@@ -1188,7 +1189,8 @@ complete_info([{what}])                                        *complete_info()*
 				typed text only, or the last completion after
 				no item is selected when using the <Up> or
 				<Down> keys)
-		   inserted	Inserted string. [NOT IMPLEMENTED YET]
+		   completed	Return a dictionary containing the entries of
+				the currently selected index item.
 		   preview_winid     Info floating preview window id.
 		   preview_bufnr     Info floating preview buffer id.
 
@@ -1635,7 +1637,7 @@ diff_filler({lnum})                                              *diff_filler()*
 		Returns 0 if the current window is not in diff mode.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
 
                 Return: ~
                   (`integer`)
@@ -1652,7 +1654,7 @@ diff_hlID({lnum}, {col})                                           *diff_hlID()*
 		syntax information about the highlighting.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
                   • {col} (`integer`)
 
                 Return: ~
@@ -2166,7 +2168,8 @@ extend({expr1}, {expr2} [, {expr3}])                                  *extend()*
 		When {expr3} is omitted then "force" is assumed.
 
 		{expr1} is changed when {expr2} is not empty.  If necessary
-		make a copy of {expr1} first.
+		make a copy of {expr1} first or use |extendnew()| to return a
+		new List/Dictionary.
 		{expr2} remains unchanged.
 		When {expr1} is locked and {expr2} is not empty the operation
 		fails.
@@ -2560,7 +2563,7 @@ foldclosed({lnum})                                                *foldclosed()*
 		line, "'m" mark m, etc.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
 
                 Return: ~
                   (`integer`)
@@ -2573,7 +2576,7 @@ foldclosedend({lnum})                                          *foldclosedend()*
 		line, "'m" mark m, etc.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
 
                 Return: ~
                   (`integer`)
@@ -2591,7 +2594,7 @@ foldlevel({lnum})                                                  *foldlevel()*
 		line, "'m" mark m, etc.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
 
                 Return: ~
                   (`integer`)
@@ -2626,7 +2629,7 @@ foldtextresult({lnum})                                        *foldtextresult()*
 		Useful when exporting folded text, e.g., to HTML.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
 
                 Return: ~
                   (`string`)
@@ -3078,14 +3081,16 @@ getchangelist([{buf}])                                         *getchangelist()*
                 Return: ~
                   (`table[]`)
 
-getchar([{expr}])                                                    *getchar()*
+getchar([{expr} [, {opts}]])                                         *getchar()*
 		Get a single character from the user or input stream.
-		If {expr} is omitted, wait until a character is available.
+		If {expr} is omitted or is -1, wait until a character is
+			available.
 		If {expr} is 0, only get a character when one is available.
 			Return zero otherwise.
 		If {expr} is 1, only check if a character is available, it is
 			not consumed.  Return zero if no character available.
-		If you prefer always getting a string use |getcharstr()|.
+		If you prefer always getting a string use |getcharstr()|, or
+		specify |FALSE| as "number" in {opts}.
 
 		Without {expr} and when {expr} is 0 a whole character or
 		special key is returned.  If it is a single character, the
@@ -3095,7 +3100,8 @@ getchar([{expr}])                                                    *getchar()*
 		starting with 0x80 (decimal: 128).  This is the same value as
 		the String "\<Key>", e.g., "\<Left>".  The returned value is
 		also a String when a modifier (shift, control, alt) was used
-		that is not included in the character.
+		that is not included in the character.  |keytrans()| can also
+		be used to convert a returned String into a readable form.
 
 		When {expr} is 0 and Esc is typed, there will be a short delay
 		while Vim waits to see if this is the start of an escape
@@ -3106,6 +3112,32 @@ getchar([{expr}])                                                    *getchar()*
 		Use nr2char() to convert it to a String.
 
 		Use getcharmod() to obtain any additional modifiers.
+
+		The optional argument {opts} is a Dict and supports the
+		following items:
+
+			cursor		A String specifying cursor behavior
+					when waiting for a character.
+					"hide": hide the cursor.
+					"keep": keep current cursor unchanged.
+					"msg": move cursor to message area.
+					(default: automagically decide
+					between "keep" and "msg")
+
+			number		If |TRUE|, return a Number when getting
+					a single character.
+					If |FALSE|, the return value is always
+					converted to a String, and an empty
+					String (instead of 0) is returned when
+					no character is available.
+					(default: |TRUE|)
+
+			simplify	If |TRUE|, include modifiers in the
+					character if possible.  E.g., return
+					the same value for CTRL-I and <Tab>.
+					If |FALSE|, don't include modifiers in
+					the character.
+					(default: |TRUE|)
 
 		When the user clicks a mouse button, the mouse event will be
 		returned.  The position can then be found in |v:mouse_col|,
@@ -3144,10 +3176,11 @@ getchar([{expr}])                                                    *getchar()*
 <
 
                 Parameters: ~
-                  • {expr} (`0|1?`)
+                  • {expr} (`-1|0|1?`)
+                  • {opts} (`table?`)
 
                 Return: ~
-                  (`integer`)
+                  (`integer|string`)
 
 getcharmod()                                                      *getcharmod()*
 		The result is a Number which is the state of the modifiers for
@@ -3212,19 +3245,12 @@ getcharsearch()                                                *getcharsearch()*
                   (`table`)
 
 getcharstr([{expr}])                                              *getcharstr()*
-		Get a single character from the user or input stream as a
-		string.
-		If {expr} is omitted, wait until a character is available.
-		If {expr} is 0 or false, only get a character when one is
-			available.  Return an empty string otherwise.
-		If {expr} is 1 or true, only check if a character is
-			available, it is not consumed.  Return an empty string
-			if no character is available.
-		Otherwise this works like |getchar()|, except that a number
-		result is converted to a string.
+		The same as |getchar()|, except that this always returns a
+		String, and "number" isn't allowed in {opts}.
 
                 Parameters: ~
-                  • {expr} (`0|1?`)
+                  • {expr} (`-1|0|1?`)
+                  • {opts} (`table?`)
 
                 Return: ~
                   (`string`)
@@ -4182,6 +4208,21 @@ getscriptinfo([{opts}])                                        *getscriptinfo()*
                 Return: ~
                   (`vim.fn.getscriptinfo.ret[]`)
 
+getstacktrace()                                                *getstacktrace()*
+		Returns the current stack trace of Vim scripts.
+		Stack trace is a |List|, of which each item is a |Dictionary|
+		with the following items:
+		    funcref	The funcref if the stack is at a function,
+				otherwise this item is omitted.
+		    event	The string of the event description if the
+				stack is at an autocmd event, otherwise this
+				item is omitted.
+		    lnum	The line number in the script on the stack.
+		    filepath	The file path of the script on the stack.
+
+                Return: ~
+                  (`table[]`)
+
 gettabinfo([{tabnr}])                                             *gettabinfo()*
 		If {tabnr} is not specified, then information about all the
 		tab pages is returned as a |List|. Each List item is a
@@ -4558,6 +4599,7 @@ has({feature})                                                           *has()*
 			fname_case	Case in file names matters (for Darwin and MS-Windows
 					this is not present).
 			gui_running	Nvim has a GUI.
+			hurd		GNU/Hurd system.
 			iconv		Can use |iconv()| for conversion.
 			linux		Linux system.
 			mac		MacOS system.
@@ -4860,6 +4902,8 @@ indent({lnum})                                                        *indent()*
 		of 'tabstop' is relevant.  {lnum} is used just like in
 		|getline()|.
 		When {lnum} is invalid -1 is returned.
+
+		To get or set indent of lines in a string, see |vim.text.indent()|.
 
                 Parameters: ~
                   • {lnum} (`integer|string`)
@@ -5662,7 +5706,7 @@ line2byte({lnum})                                                  *line2byte()*
 		Also see |byte2line()|, |go| and |:goto|.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
 
                 Return: ~
                   (`integer`)
@@ -5675,7 +5719,7 @@ lispindent({lnum})                                                *lispindent()*
 		When {lnum} is invalid, -1 is returned.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
 
                 Return: ~
                   (`integer`)
@@ -5761,7 +5805,9 @@ log10({expr})                                                          *log10()*
 
 luaeval({expr} [, {expr}])                                           *luaeval()*
 		Evaluate Lua expression {expr} and return its result converted
-		to Vim data structures. See |lua-eval| for more details.
+		to Vim data structures. See |lua-eval| for details.
+
+		See also |v:lua-call|.
 
                 Parameters: ~
                   • {expr} (`string`)
@@ -5862,9 +5908,8 @@ maparg({name} [, {mode} [, {abbr} [, {dict}]]])                       *maparg()*
 		When {abbr} is there and it is |TRUE| use abbreviations
 		instead of mappings.
 
-		When {dict} is there and it is |TRUE| return a dictionary
-		containing all the information of the mapping with the
-		following items:			*mapping-dict*
+		When {dict} is |TRUE|, return a dictionary describing the
+		mapping, with these items:		*mapping-dict*
 		  "lhs"	     The {lhs} of the mapping as it would be typed
 		  "lhsraw"   The {lhs} of the mapping as raw bytes
 		  "lhsrawalt" The {lhs} of the mapping as raw bytes, alternate
@@ -6045,7 +6090,7 @@ mapset({dict})
 <
 
                 Parameters: ~
-                  • {dict} (`boolean`)
+                  • {dict} (`table<string,any>`)
 
                 Return: ~
                   (`any`)
@@ -6365,6 +6410,9 @@ matchfuzzy({list}, {str} [, {dict}])                              *matchfuzzy()*
 				given sequence.
 		    limit	Maximum number of matches in {list} to be
 				returned.  Zero means no limit.
+		    camelcase	Use enhanced camel case scoring making results
+				better suited for completion related to
+				programming languages.  Defaults to v:true.
 
 		If {list} is a list of dictionaries, then the optional {dict}
 		argument supports the following additional items:
@@ -6419,7 +6467,7 @@ matchfuzzy({list}, {str} [, {dict}])                              *matchfuzzy()*
                 Parameters: ~
                   • {list} (`any[]`)
                   • {str} (`string`)
-                  • {dict} (`string?`)
+                  • {dict} (`table?`)
 
                 Return: ~
                   (`any`)
@@ -6449,7 +6497,7 @@ matchfuzzypos({list}, {str} [, {dict}])                        *matchfuzzypos()*
                 Parameters: ~
                   • {list} (`any[]`)
                   • {str} (`string`)
-                  • {dict} (`string?`)
+                  • {dict} (`table?`)
 
                 Return: ~
                   (`any`)
@@ -6753,10 +6801,9 @@ mkdir({name} [, {flags} [, {prot}]])                              *mkdir()* *E73
 		If {prot} is given it is used to set the protection bits of
 		the new directory.  The default is 0o755 (rwxr-xr-x: r/w for
 		the user, readable for others).  Use 0o700 to make it
-		unreadable for others.
-
-		{prot} is applied for all parts of {name}.  Thus if you create
-		/tmp/foo/bar then /tmp/foo will be created with 0o700. Example: >vim
+		unreadable for others.  This is used for the newly created
+		directories.  Note: umask is applied to {prot} (on Unix).
+		Example: >vim
 			call mkdir($HOME .. "/tmp/foo/bar", "p", 0o700)
 
 <		This function is not available in the |sandbox|.
@@ -6946,7 +6993,7 @@ nextnonblank({lnum})                                            *nextnonblank()*
 		See also |prevnonblank()|.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
 
                 Return: ~
                   (`integer`)
@@ -7080,7 +7127,7 @@ prevnonblank({lnum})                                            *prevnonblank()*
 		Also see |nextnonblank()|.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
 
                 Return: ~
                   (`integer`)
@@ -7459,6 +7506,7 @@ prompt_setcallback({buf}, {expr})                         *prompt_setcallback()*
 		     endif
 		   endfunc
 		   call prompt_setcallback(bufnr(), function('s:TextEntered'))
+<
 
                 Parameters: ~
                   • {buf} (`integer|string`)
@@ -8267,7 +8315,7 @@ search({pattern} [, {flags} [, {stopline} [, {timeout} [, {skip}]]]]) *search()*
                   • {skip} (`string|function?`)
 
                 Return: ~
-                  (`any`)
+                  (`integer`)
 
 searchcount([{options}])                                         *searchcount()*
 		Get or update the last search count, like what is displayed
@@ -8892,7 +8940,7 @@ setline({lnum}, {text})                                              *setline()*
 <		Note: The '[ and '] marks are not set.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
                   • {text} (`any`)
 
                 Return: ~
@@ -10182,7 +10230,9 @@ stdioopen({opts})                                                  *stdioopen()*
 
 stdpath({what})                                                *stdpath()* *E6100*
 		Returns |standard-path| locations of various default files and
-		directories.
+		directories. The locations are driven by |base-directories|
+		which you can configure via |$NVIM_APPNAME| or the `$XDG_…`
+		environment variables.
 
 		{what}       Type    Description ~
 		cache        String  Cache directory: arbitrary temporary
@@ -10804,7 +10854,7 @@ synID({lnum}, {col}, {trans})                                          *synID()*
 <
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
                   • {col} (`integer`)
                   • {trans} (`0|1`)
 
@@ -10909,7 +10959,7 @@ synconcealed({lnum}, {col})                                     *synconcealed()*
 		mechanisms |syntax-vs-match|.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
                   • {col} (`integer`)
 
                 Return: ~
@@ -10935,7 +10985,7 @@ synstack({lnum}, {col})                                             *synstack()*
 		valid positions.
 
                 Parameters: ~
-                  • {lnum} (`integer`)
+                  • {lnum} (`integer|string`)
                   • {col} (`integer`)
 
                 Return: ~

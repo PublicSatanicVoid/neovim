@@ -52,7 +52,7 @@ vim.go.ari = vim.go.allowrevins
 --- set to one of CJK locales.  See Unicode Standard Annex #11
 --- (https://www.unicode.org/reports/tr11).
 ---
---- @type string
+--- @type 'single'|'double'
 vim.o.ambiwidth = "single"
 vim.o.ambw = vim.o.ambiwidth
 vim.go.ambiwidth = vim.o.ambiwidth
@@ -208,7 +208,7 @@ vim.go.awa = vim.go.autowriteall
 --- will change.  To use other settings, place ":highlight" commands AFTER
 --- the setting of the 'background' option.
 ---
---- @type string
+--- @type 'light'|'dark'
 vim.o.background = "dark"
 vim.o.bg = vim.o.background
 vim.go.background = vim.o.background
@@ -595,7 +595,7 @@ vim.wo.briopt = vim.wo.breakindentopt
 --- This option is used together with 'buftype' and 'swapfile' to specify
 --- special kinds of buffers.   See `special-buffers`.
 ---
---- @type string
+--- @type ''|'hide'|'unload'|'delete'|'wipe'
 vim.o.bufhidden = ""
 vim.o.bh = vim.o.bufhidden
 vim.bo.bufhidden = vim.o.bufhidden
@@ -658,7 +658,7 @@ vim.bo.bl = vim.bo.buflisted
 --- without saving.  For writing there must be matching `BufWriteCmd|,
 --- |FileWriteCmd` or `FileAppendCmd` autocommands.
 ---
---- @type string
+--- @type ''|'acwrite'|'help'|'nofile'|'nowrite'|'quickfix'|'terminal'|'prompt'
 vim.o.buftype = ""
 vim.o.bt = vim.o.buftype
 vim.bo.buftype = vim.o.buftype
@@ -1044,10 +1044,35 @@ vim.o.cfu = vim.o.completefunc
 vim.bo.completefunc = vim.o.completefunc
 vim.bo.cfu = vim.bo.completefunc
 
---- A comma-separated list of `complete-items` that controls the alignment
---- and display order of items in the popup menu during Insert mode
---- completion. The supported values are abbr, kind, and menu. These
---- options allow to customize how the completion items are shown in the
+--- A comma-separated list of strings to enable fuzzy collection for
+--- specific `ins-completion` modes, affecting how matches are gathered
+--- during completion.  For specified modes, fuzzy matching is used to
+--- find completion candidates instead of the standard prefix-based
+--- matching.  This option can contain the following values:
+---
+--- keyword		keywords in the current file	`i_CTRL-X_CTRL-N`
+--- 		keywords with flags ".", "w",	`i_CTRL-N` `i_CTRL-P`
+--- 		"b", "u", "U" and "k{dict}" in 'complete'
+--- 		keywords in 'dictionary'	`i_CTRL-X_CTRL-K`
+---
+--- files		file names			`i_CTRL-X_CTRL-F`
+---
+--- whole_line	whole lines			`i_CTRL-X_CTRL-L`
+---
+--- When using the 'completeopt' "longest" option value, fuzzy collection
+--- can identify the longest common string among the best fuzzy matches
+--- and insert it automatically.
+---
+--- @type string
+vim.o.completefuzzycollect = ""
+vim.o.cfc = vim.o.completefuzzycollect
+vim.go.completefuzzycollect = vim.o.completefuzzycollect
+vim.go.cfc = vim.go.completefuzzycollect
+
+--- A comma-separated list of strings that controls the alignment and
+--- display order of items in the popup menu during Insert mode
+--- completion.  The supported values are "abbr", "kind", and "menu".
+--- These values allow customizing how `complete-items` are shown in the
 --- popup menu.  Note: must always contain those three values in any
 --- order.
 ---
@@ -1060,6 +1085,22 @@ vim.go.cia = vim.go.completeitemalign
 --- A comma-separated list of options for Insert mode completion
 --- `ins-completion`.  The supported values are:
 ---
+---    fuzzy    Enable `fuzzy-matching` for completion candidates. This
+--- 	    allows for more flexible and intuitive matching, where
+--- 	    characters can be skipped and matches can be found even
+--- 	    if the exact sequence is not typed.  Note: This option
+--- 	    does not affect the collection of candidate list, it only
+--- 	    controls how completion candidates are reduced from the
+--- 	    list of alternatives.  If you want to use `fuzzy-matching`
+--- 	    to gather more alternatives for your candidate list,
+--- 	    see `'completefuzzycollect'`.
+---
+---    longest  Only insert the longest common text of the matches.  If
+--- 	    the menu is displayed you can use CTRL-L to add more
+--- 	    characters.  Whether case is ignored depends on the kind
+--- 	    of completion.  For buffer text the 'ignorecase' option is
+--- 	    used.
+---
 ---    menu	    Use a popup menu to show the possible completions.  The
 --- 	    menu is only shown when there is more than one match and
 --- 	    sufficient colors are available.  `ins-completion-menu`
@@ -1068,38 +1109,34 @@ vim.go.cia = vim.go.completeitemalign
 --- 	    Useful when there is additional information about the
 --- 	    match, e.g., what file it comes from.
 ---
----    longest  Only insert the longest common text of the matches.  If
---- 	    the menu is displayed you can use CTRL-L to add more
---- 	    characters.  Whether case is ignored depends on the kind
---- 	    of completion.  For buffer text the 'ignorecase' option is
---- 	    used.
+---    noinsert Do not insert any text for a match until the user selects
+--- 	    a match from the menu.  Only works in combination with
+--- 	    "menu" or "menuone". No effect if "longest" is present.
 ---
----    preview  Show extra information about the currently selected
---- 	    completion in the preview window.  Only works in
---- 	    combination with "menu" or "menuone".
+---    noselect Same as "noinsert", except that no menu item is
+--- 	    pre-selected.  If both "noinsert" and "noselect" are
+--- 	    present, "noselect" has precedence.
+---
+---    nosort   Disable sorting of completion candidates based on fuzzy
+--- 	    scores when "fuzzy" is enabled.  Candidates will appear
+--- 	    in their original order.
 ---
 ---    popup    Show extra information about the currently selected
 --- 	    completion in a popup window.  Only works in combination
 --- 	    with "menu" or "menuone".  Overrides "preview".
 ---
----    noinsert Do not insert any text for a match until the user selects
---- 	    a match from the menu. Only works in combination with
---- 	    "menu" or "menuone". No effect if "longest" is present.
+---    preinsert
+--- 	    Preinsert the portion of the first candidate word that is
+--- 	    not part of the current completion leader and using the
+--- 	    `hl-ComplMatchIns` highlight group.  In order for it to
+--- 	    work, "fuzzy" must not be set and "menuone" must be set.
 ---
----    noselect Same as "noinsert", except that no menu item is
---- 	    pre-selected. If both "noinsert" and "noselect" are present,
---- 	    "noselect" has precedence.
----
----    fuzzy    Enable `fuzzy-matching` for completion candidates. This
---- 	    allows for more flexible and intuitive matching, where
---- 	    characters can be skipped and matches can be found even
---- 	    if the exact sequence is not typed.  Only makes a
---- 	    difference how completion candidates are reduced from the
---- 	    list of alternatives, but not how the candidates are
---- 	    collected (using different completion types).
+---    preview  Show extra information about the currently selected
+--- 	    completion in the preview window.  Only works in
+--- 	    combination with "menu" or "menuone".
 ---
 --- @type string
-vim.o.completeopt = "menu,preview"
+vim.o.completeopt = "menu,popup"
 vim.o.cot = vim.o.completeopt
 vim.bo.completeopt = vim.o.completeopt
 vim.bo.cot = vim.bo.completeopt
@@ -1118,7 +1155,7 @@ vim.go.cot = vim.go.completeopt
 --- For Insert mode completion the buffer-local value is used.  For
 --- command line completion the global value is used.
 ---
---- @type string
+--- @type ''|'slash'|'backslash'
 vim.o.completeslash = ""
 vim.o.csl = vim.o.completeslash
 vim.bo.completeslash = vim.o.completeslash
@@ -1621,11 +1658,20 @@ vim.go.dex = vim.go.diffexpr
 --- Option settings for diff mode.  It can consist of the following items.
 --- All are optional.  Items must be separated by a comma.
 ---
---- 	filler		Show filler lines, to keep the text
---- 			synchronized with a window that has inserted
---- 			lines at the same position.  Mostly useful
---- 			when windows are side-by-side and 'scrollbind'
---- 			is set.
+--- 	algorithm:{text} Use the specified diff algorithm with the
+--- 			internal diff engine. Currently supported
+--- 			algorithms are:
+--- 			myers      the default algorithm
+--- 			minimal    spend extra time to generate the
+--- 				   smallest possible diff
+--- 			patience   patience diff algorithm
+--- 			histogram  histogram diff algorithm
+---
+--- 	closeoff	When a window is closed where 'diff' is set
+--- 			and there is only one window remaining in the
+--- 			same tab page with 'diff' set, execute
+--- 			`:diffoff` in that window.  This undoes a
+--- 			`:diffsplit` command.
 ---
 --- 	context:{n}	Use a context of {n} lines between a change
 --- 			and a fold that contains unchanged lines.
@@ -1635,6 +1681,23 @@ vim.go.dex = vim.go.diffexpr
 --- 			for a deleted line. Set it to a very large
 --- 			value (999999) to disable folding completely.
 --- 			See `fold-diff`.
+---
+--- 	filler		Show filler lines, to keep the text
+--- 			synchronized with a window that has inserted
+--- 			lines at the same position.  Mostly useful
+--- 			when windows are side-by-side and 'scrollbind'
+--- 			is set.
+---
+--- 	foldcolumn:{n}	Set the 'foldcolumn' option to {n} when
+--- 			starting diff mode.  Without this 2 is used.
+---
+--- 	followwrap	Follow the 'wrap' option and leave as it is.
+---
+--- 	horizontal	Start diff mode with horizontal splits (unless
+--- 			explicitly specified otherwise).
+---
+--- 	hiddenoff	Do not use diff mode for a buffer when it
+--- 			becomes hidden.
 ---
 --- 	iblank		Ignore changes where lines are all blank.  Adds
 --- 			the "-B" flag to the "diff" command if
@@ -1648,6 +1711,32 @@ vim.go.dex = vim.go.diffexpr
 --- 	icase		Ignore changes in case of text.  "a" and "A"
 --- 			are considered the same.  Adds the "-i" flag
 --- 			to the "diff" command if 'diffexpr' is empty.
+---
+--- 	indent-heuristic
+--- 			Use the indent heuristic for the internal
+--- 			diff library.
+---
+--- 	inline:{text}	Highlight inline differences within a change.
+--- 			See `view-diffs`.  Supported values are:
+---
+--- 			none    Do not perform inline highlighting.
+--- 			simple  Highlight from first different
+--- 				character to the last one in each
+--- 				line.  This is the default if no
+--- 				`inline:` value is set.
+--- 			char    Use internal diff to perform a
+--- 				character-wise diff and highlight the
+--- 				difference.
+--- 			word    Use internal diff to perform a
+--- 				`word`-wise diff and highlight the
+--- 				difference.
+---
+--- 	internal	Use the internal diff library.  This is
+--- 			ignored when 'diffexpr' is set.  *E960*
+--- 			When running out of memory when writing a
+--- 			buffer this item will be ignored for diffs
+--- 			involving that buffer.  Set the 'verbose'
+--- 			option to see when this happens.
 ---
 --- 	iwhite		Ignore changes in amount of white space.  Adds
 --- 			the "-b" flag to the "diff" command if
@@ -1668,55 +1757,18 @@ vim.go.dex = vim.go.diffexpr
 --- 			of the "diff" command for what this does
 --- 			exactly.
 ---
---- 	horizontal	Start diff mode with horizontal splits (unless
---- 			explicitly specified otherwise).
+--- 	linematch:{n}   Align and mark changes between the most
+--- 			similar lines between the buffers. When the
+--- 			total number of lines in the diff hunk exceeds
+--- 			{n}, the lines will not be aligned because for
+--- 			very large diff hunks there will be a
+--- 			noticeable lag. A reasonable setting is
+--- 			"linematch:60", as this will enable alignment
+--- 			for a 2 buffer diff hunk of 30 lines each,
+--- 			or a 3 buffer diff hunk of 20 lines each.
 ---
 --- 	vertical	Start diff mode with vertical splits (unless
 --- 			explicitly specified otherwise).
----
---- 	closeoff	When a window is closed where 'diff' is set
---- 			and there is only one window remaining in the
---- 			same tab page with 'diff' set, execute
---- 			`:diffoff` in that window.  This undoes a
---- 			`:diffsplit` command.
----
---- 	hiddenoff	Do not use diff mode for a buffer when it
---- 			becomes hidden.
----
---- 	foldcolumn:{n}	Set the 'foldcolumn' option to {n} when
---- 			starting diff mode.  Without this 2 is used.
----
---- 	followwrap	Follow the 'wrap' option and leave as it is.
----
---- 	internal	Use the internal diff library.  This is
---- 			ignored when 'diffexpr' is set.  *E960*
---- 			When running out of memory when writing a
---- 			buffer this item will be ignored for diffs
---- 			involving that buffer.  Set the 'verbose'
---- 			option to see when this happens.
----
---- 	indent-heuristic
---- 			Use the indent heuristic for the internal
---- 			diff library.
----
---- 	linematch:{n}   Enable a second stage diff on each generated
---- 			hunk in order to align lines. When the total
---- 			number of lines in a hunk exceeds {n}, the
---- 			second stage diff will not be performed as
---- 			very large hunks can cause noticeable lag. A
---- 			recommended setting is "linematch:60", as this
---- 			will enable alignment for a 2 buffer diff with
---- 			hunks of up to 30 lines each, or a 3 buffer
---- 			diff with hunks of up to 20 lines each.
----
---- 	algorithm:{text} Use the specified diff algorithm with the
---- 			internal diff engine. Currently supported
---- 			algorithms are:
---- 			myers      the default algorithm
---- 			minimal    spend extra time to generate the
---- 				   smallest possible diff
---- 			patience   patience diff algorithm
---- 			histogram  histogram diff algorithm
 ---
 --- Examples:
 ---
@@ -1729,7 +1781,7 @@ vim.go.dex = vim.go.diffexpr
 ---
 ---
 --- @type string
-vim.o.diffopt = "internal,filler,closeoff"
+vim.o.diffopt = "internal,filler,closeoff,inline:simple,linematch:40"
 vim.o.dip = vim.o.diffopt
 vim.go.diffopt = vim.o.diffopt
 vim.go.dip = vim.go.diffopt
@@ -1824,7 +1876,7 @@ vim.go.dy = vim.go.display
 --- 	hor	horizontally, height of windows is not affected
 --- 	both	width and height of windows is affected
 ---
---- @type string
+--- @type 'both'|'ver'|'hor'
 vim.o.eadirection = "both"
 vim.o.ead = vim.o.eadirection
 vim.go.eadirection = vim.o.eadirection
@@ -1979,6 +2031,16 @@ vim.o.ei = vim.o.eventignore
 vim.go.eventignore = vim.o.eventignore
 vim.go.ei = vim.go.eventignore
 
+--- Similar to 'eventignore' but applies to a particular window and its
+--- buffers, for which window and buffer related autocommands can be
+--- ignored indefinitely without affecting the global 'eventignore'.
+---
+--- @type string
+vim.o.eventignorewin = ""
+vim.o.eiw = vim.o.eventignorewin
+vim.wo.eventignorewin = vim.o.eventignorewin
+vim.wo.eiw = vim.wo.eventignorewin
+
 --- In Insert mode: Use the appropriate number of spaces to insert a
 --- <Tab>.  Spaces are used in indents with the '>' and '<' commands and
 --- when 'autoindent' is on.  To insert a real tab when 'expandtab' is
@@ -1990,9 +2052,10 @@ vim.o.et = vim.o.expandtab
 vim.bo.expandtab = vim.o.expandtab
 vim.bo.et = vim.bo.expandtab
 
---- Automatically execute .nvim.lua, .nvimrc, and .exrc files in the
---- current directory, if the file is in the `trust` list. Use `:trust` to
---- manage trusted files. See also `vim.secure.read()`.
+--- Enables project-local configuration. Nvim will execute any .nvim.lua,
+--- .nvimrc, or .exrc file found in the `current-directory`, if the file is
+--- in the `trust` list. Use `:trust` to manage trusted files. See also
+--- `vim.secure.read()`.
 ---
 --- Compare 'exrc' to `editorconfig`:
 --- - 'exrc' can execute any code; editorconfig only specifies settings.
@@ -2126,7 +2189,7 @@ vim.go.fencs = vim.go.fileencodings
 --- option is set, because the file would be different when written.
 --- This option cannot be changed when 'modifiable' is off.
 ---
---- @type string
+--- @type 'unix'|'dos'|'mac'
 vim.o.fileformat = "unix"
 vim.o.ff = vim.o.fileformat
 vim.bo.fileformat = vim.o.fileformat
@@ -2382,7 +2445,7 @@ vim.go.fcl = vim.go.foldclose
 ---     "[1-9]":      to display a fixed number of columns
 --- See `folding`.
 ---
---- @type string
+--- @type 'auto'|'auto:1'|'auto:2'|'auto:3'|'auto:4'|'auto:5'|'auto:6'|'auto:7'|'auto:8'|'auto:9'|'0'|'1'|'2'|'3'|'4'|'5'|'6'|'7'|'8'|'9'
 vim.o.foldcolumn = "0"
 vim.o.fdc = vim.o.foldcolumn
 vim.wo.foldcolumn = vim.o.foldcolumn
@@ -2479,7 +2542,7 @@ vim.wo.fmr = vim.wo.foldmarker
 --- `fold-syntax`	syntax	    Syntax highlighting items specify folds.
 --- `fold-diff`	diff	    Fold text that is not changed.
 ---
---- @type string
+--- @type 'manual'|'expr'|'marker'|'indent'|'syntax'|'diff'
 vim.o.foldmethod = "manual"
 vim.o.fdm = vim.o.foldmethod
 vim.wo.foldmethod = vim.o.foldmethod
@@ -3144,7 +3207,7 @@ vim.bo.ims = vim.bo.imsearch
 --- 'redrawtime') then 'inccommand' is automatically disabled until
 --- `Command-line-mode` is done.
 ---
---- @type string
+--- @type 'nosplit'|'split'|''
 vim.o.inccommand = "nosplit"
 vim.o.icm = vim.o.inccommand
 vim.go.inccommand = vim.o.inccommand
@@ -4354,15 +4417,15 @@ vim.go.mh = vim.go.mousehide
 ---     "g<LeftMouse>"  is "<C-LeftMouse>	(jump to tag under mouse click)
 ---     "g<RightMouse>" is "<C-RightMouse>	("CTRL-T")
 ---
---- @type string
+--- @type 'extend'|'popup'|'popup_setpos'
 vim.o.mousemodel = "popup_setpos"
 vim.o.mousem = vim.o.mousemodel
 vim.go.mousemodel = vim.o.mousemodel
 vim.go.mousem = vim.go.mousemodel
 
 --- When on, mouse move events are delivered to the input queue and are
---- available for mapping. The default, off, avoids the mouse movement
---- overhead except when needed.
+--- available for mapping `<MouseMove>`. The default, off, avoids the mouse
+--- movement overhead except when needed.
 --- Warning: Setting this option can make pending mappings to be aborted
 --- when the mouse is moved.
 ---
@@ -4620,7 +4683,7 @@ vim.go.pm = vim.go.patchmode
 --- ```
 --- - A directory name may end in a ':' or '/'.
 --- - Environment variables are expanded `:set_env`.
---- - When using `netrw.vim` URLs can be used.  For example, adding
+--- - When using `netrw` URLs can be used.  For example, adding
 ---   "https://www.vim.org" will make ":find index.html" work.
 --- - Search upwards and downwards in a directory tree using "*", "**" and
 ---   ";".  See `file-searching` for info and syntax.
@@ -4739,6 +4802,17 @@ vim.o.ph = vim.o.pumheight
 vim.go.pumheight = vim.o.pumheight
 vim.go.ph = vim.go.pumheight
 
+--- Maximum width for the popup menu (`ins-completion-menu`).  When zero,
+--- there is no maximum width limit, otherwise the popup menu will never be
+--- wider than this value.  Truncated text will be indicated by "..." at the
+--- end.  Takes precedence over 'pumwidth'.
+---
+--- @type integer
+vim.o.pummaxwidth = 0
+vim.o.pmw = vim.o.pummaxwidth
+vim.go.pummaxwidth = vim.o.pummaxwidth
+vim.go.pmw = vim.go.pummaxwidth
+
 --- Minimum width for the popup menu (`ins-completion-menu`).  If the
 --- cursor column + 'pumwidth' exceeds screen width, the popup menu is
 --- nudged to fit on the screen.
@@ -4845,8 +4919,8 @@ vim.go.redrawdebug = vim.o.redrawdebug
 vim.go.rdb = vim.go.redrawdebug
 
 --- Time in milliseconds for redrawing the display.  Applies to
---- 'hlsearch', 'inccommand', `:match` highlighting and syntax
---- highlighting.
+--- 'hlsearch', 'inccommand', `:match` highlighting, syntax highlighting,
+--- and async `LanguageTree:parse()`.
 --- When redrawing takes more than this many milliseconds no further
 --- matches will be highlighted.
 --- For syntax highlighting the time applies per window.  When over the
@@ -5222,7 +5296,7 @@ vim.go.sect = vim.go.sections
 --- backwards, you cannot include the last character of a line, when
 --- starting in Normal mode and 'virtualedit' empty.
 ---
---- @type string
+--- @type 'inclusive'|'exclusive'|'old'
 vim.o.selection = "inclusive"
 vim.o.sel = vim.o.selection
 vim.go.selection = vim.o.selection
@@ -5788,7 +5862,7 @@ vim.go.sc = vim.go.showcmd
 --- place the text.  Without a custom 'statusline' or 'tabline' it will be
 --- displayed in a convenient location.
 ---
---- @type string
+--- @type 'last'|'statusline'|'tabline'
 vim.o.showcmdloc = "last"
 vim.o.sloc = vim.o.showcmdloc
 vim.go.showcmdloc = vim.o.showcmdloc
@@ -5920,7 +5994,7 @@ vim.go.siso = vim.go.sidescrolloff
 ---    "number"	display signs in the 'number' column. If the number
 --- 		column is not present, then behaves like "auto".
 ---
---- @type string
+--- @type 'yes'|'no'|'auto'|'auto:1'|'auto:2'|'auto:3'|'auto:4'|'auto:5'|'auto:6'|'auto:7'|'auto:8'|'auto:9'|'yes:1'|'yes:2'|'yes:3'|'yes:4'|'yes:5'|'yes:6'|'yes:7'|'yes:8'|'yes:9'|'number'
 vim.o.signcolumn = "auto"
 vim.o.scl = vim.o.signcolumn
 vim.wo.signcolumn = vim.o.signcolumn
@@ -6228,7 +6302,7 @@ vim.go.sb = vim.go.splitbelow
 --- with the previous cursor position. For "screen", the text cannot always
 --- be kept on the same screen line when 'wrap' is enabled.
 ---
---- @type string
+--- @type 'cursor'|'screen'|'topline'
 vim.o.splitkeep = "cursor"
 vim.o.spk = vim.o.splitkeep
 vim.go.splitkeep = vim.o.splitkeep
@@ -6876,7 +6950,7 @@ vim.go.tbs = vim.go.tagbsearch
 ---    match	Match case
 ---    smart	Ignore case unless an upper case letter is used
 ---
---- @type string
+--- @type 'followic'|'ignore'|'match'|'followscs'|'smart'
 vim.o.tagcase = "followic"
 vim.o.tc = vim.o.tagcase
 vim.bo.tagcase = vim.o.tagcase
@@ -7671,7 +7745,10 @@ vim.go.wmnu = vim.go.wildmenu
 --- "lastused"	When completing buffer names and more than one buffer
 --- 		matches, sort buffers by time last used (other than
 --- 		the current buffer).
---- When there is only a single match, it is fully completed in all cases.
+--- "noselect"	Do not pre-select first menu item and start 'wildmenu'
+--- 		if it is enabled.
+--- When there is only a single match, it is fully completed in all cases
+--- except when "noselect" is present.
 ---
 --- Examples of useful colon-separated values:
 --- "longest:full"	Like "longest", but also start 'wildmenu' if it is
@@ -7709,7 +7786,17 @@ vim.go.wmnu = vim.go.wildmenu
 --- ```vim
 --- 	set wildmode=longest,list
 --- ```
---- Complete longest common string, then list alternatives.
+--- Complete longest common string, then list alternatives
+---
+--- ```vim
+--- 	set wildmode=noselect:full
+--- ```
+--- Display 'wildmenu' without completing, then each full match
+---
+--- ```vim
+--- 	set wildmode=noselect:lastused,full
+--- ```
+--- Same as above, but sort buffers by time last used.
 --- More info here: `cmdline-completion`.
 ---
 --- @type string
@@ -7758,7 +7845,7 @@ vim.go.wop = vim.go.wildoptions
 --- key is never used for the menu.
 --- This option is not used for <F10>; on Win32.
 ---
---- @type string
+--- @type 'yes'|'menu'|'no'
 vim.o.winaltkeys = "menu"
 vim.o.wak = vim.o.winaltkeys
 vim.go.winaltkeys = vim.o.winaltkeys
@@ -7797,6 +7884,20 @@ vim.o.winblend = 0
 vim.o.winbl = vim.o.winblend
 vim.wo.winblend = vim.o.winblend
 vim.wo.winbl = vim.wo.winblend
+
+--- Defines the default border style of floating windows. The default value
+--- is empty, which is equivalent to "none". Valid values include:
+--- - "none": No border.
+--- - "single": A single line box.
+--- - "double": A double line box.
+--- - "rounded": Like "single", but with rounded corners ("╭" etc.).
+--- - "solid": Adds padding by a single whitespace cell.
+--- - "shadow": A drop shadow effect by blending with the background.
+--- - "bold": A bold line box.
+---
+--- @type ''|'double'|'single'|'shadow'|'rounded'|'solid'|'bold'|'none'
+vim.o.winborder = ""
+vim.go.winborder = vim.o.winborder
 
 --- Window height used for `CTRL-F` and `CTRL-B` when there is only one
 --- window and the value is smaller than 'lines' minus one.  The screen

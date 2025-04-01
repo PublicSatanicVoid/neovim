@@ -49,7 +49,7 @@ void api_extmark_free_all_mem(void)
 /// Creates a new namespace or gets an existing one. [namespace]()
 ///
 /// Namespaces are used for buffer highlights and virtual text, see
-/// |nvim_buf_add_highlight()| and |nvim_buf_set_extmark()|.
+/// |nvim_buf_set_extmark()|.
 ///
 /// Namespaces can be named or anonymous. If `name` matches an existing
 /// namespace, the associated id is returned. If `name` is an empty string
@@ -62,7 +62,7 @@ Integer nvim_create_namespace(String name)
 {
   handle_T id = map_get(String, int)(&namespace_ids, name);
   if (id > 0) {
-    return id;
+    return (Integer)id;
   }
   id = next_namespace_id++;
   if (name.size > 0) {
@@ -192,7 +192,7 @@ static Array extmark_to_array(MTPair extmark, bool id, bool add_dict, bool hl_na
 
 /// Gets the position (0-indexed) of an |extmark|.
 ///
-/// @param buffer  Buffer handle, or 0 for current buffer
+/// @param buffer  Buffer id, or 0 for current buffer
 /// @param ns_id  Namespace id from |nvim_create_namespace()|
 /// @param id  Extmark id
 /// @param opts  Optional parameters. Keys:
@@ -269,7 +269,7 @@ ArrayOf(Integer) nvim_buf_get_extmark_by_id(Buffer buffer, Integer ns_id,
 /// vim.print(ms)
 /// ```
 ///
-/// @param buffer  Buffer handle, or 0 for current buffer
+/// @param buffer  Buffer id, or 0 for current buffer
 /// @param ns_id  Namespace id from |nvim_create_namespace()| or -1 for all namespaces
 /// @param start  Start of range: a 0-indexed (row, col) or valid extmark id
 /// (whose position defines the bound). |api-indexing|
@@ -374,7 +374,7 @@ Array nvim_buf_get_extmarks(Buffer buffer, Integer ns_id, Object start, Object e
 /// An earlier end position is not an error, but then it behaves like an empty
 /// range (no highlighting).
 ///
-/// @param buffer  Buffer handle, or 0 for current buffer
+/// @param buffer  Buffer id, or 0 for current buffer
 /// @param ns_id  Namespace id from |nvim_create_namespace()|
 /// @param line  Line where to place the mark, 0-based. |api-indexing|
 /// @param col  Column where to place the mark, 0-based. |api-indexing|
@@ -385,6 +385,9 @@ Array nvim_buf_get_extmarks(Buffer buffer, Integer ns_id, Object start, Object e
 ///               - hl_group : highlight group used for the text range. This and below
 ///                   highlight groups can be supplied either as a string or as an integer,
 ///                   the latter of which can be obtained using |nvim_get_hl_id_by_name()|.
+///
+///                   Multiple highlight groups can be stacked by passing an array (highest
+///                   priority last).
 ///               - hl_eol : when true, for a multiline highlight covering the
 ///                          EOL of a line, continue the highlight for the rest
 ///                          of the screen line (just like for diff and
@@ -397,6 +400,15 @@ Array nvim_buf_get_extmarks(Buffer buffer, Integer ns_id, Object start, Object e
 ///                   (highest priority last).
 ///               - virt_text_pos : position of virtual text. Possible values:
 ///                 - "eol": right after eol character (default).
+///                 - "eol_right_align": display right aligned in the window
+///                                      unless the virtual text is longer than
+///                                      the space available. If the virtual
+///                                      text is too long, it is truncated to
+///                                      fit in the window after the EOL
+///                                      character. If the line is wrapped, the
+///                                      virtual text is shown after the end of
+///                                      the line rather than the previous
+///                                      screen line.
 ///                 - "overlay": display over the specified column, without
 ///                              shifting the underlying text.
 ///                 - "right_align": display right aligned in the window.
@@ -433,14 +445,17 @@ Array nvim_buf_get_extmarks(Buffer buffer, Integer ns_id, Object start, Object e
 ///                   placed below the buffer line containing the mark.
 ///
 ///               - virt_lines_above: place virtual lines above instead.
-///               - virt_lines_leftcol: Place extmarks in the leftmost
+///               - virt_lines_leftcol: Place virtual lines in the leftmost
 ///                                     column of the window, bypassing
 ///                                     sign and number columns.
-///
+///               - virt_lines_overflow: controls how to handle virtual lines wider
+///                   than the window. Currently takes the one of the following values:
+///                 - "trunc": truncate virtual lines on the right (default).
+///                 - "scroll": virtual lines can scroll horizontally with 'nowrap',
+///                    otherwise the same as "trunc".
 ///               - ephemeral : for use with |nvim_set_decoration_provider()|
 ///                   callbacks. The mark will only be used for the current
-///                   redraw cycle, and not be permantently stored in the
-///                   buffer.
+///                   redraw cycle, and not be permanently stored in the buffer.
 ///               - right_gravity : boolean that indicates the direction
 ///                   the extmark will be shifted in when new text is inserted
 ///                   (true for right, false for left). Defaults to true.
@@ -476,6 +491,10 @@ Array nvim_buf_get_extmarks(Buffer buffer, Integer ns_id, Object start, Object e
 ///                   When a character is supplied it is used as |:syn-cchar|.
 ///                   "hl_group" is used as highlight for the cchar if provided,
 ///                   otherwise it defaults to |hl-Conceal|.
+///               - conceal_lines: string which should be empty. When
+///                   provided, lines in the range are not drawn at all
+///                   (according to 'conceallevel'); the next unconcealed line
+///                   is drawn instead.
 ///               - spell: boolean indicating that spell checking should be
 ///                   performed within this extmark
 ///               - ui_watched: boolean that indicates the mark should be drawn
@@ -499,6 +518,7 @@ Integer nvim_buf_set_extmark(Buffer buffer, Integer ns_id, Integer line, Integer
   DecorVirtText virt_lines = DECOR_VIRT_LINES_INIT;
   char *url = NULL;
   bool has_hl = false;
+  bool has_hl_multiple = false;
 
   buf_T *buf = find_buffer_by_handle(buffer, err);
   if (!buf) {
@@ -551,8 +571,33 @@ Integer nvim_buf_set_extmark(Buffer buffer, Integer ns_id, Integer line, Integer
     col2 = (int)val;
   }
 
-  hl.hl_id = (int)opts->hl_group;
-  has_hl = hl.hl_id > 0;
+  if (HAS_KEY(opts, set_extmark, hl_group)) {
+    if (opts->hl_group.type == kObjectTypeArray) {
+      Array arr = opts->hl_group.data.array;
+      if (arr.size >= 1) {
+        hl.hl_id = object_to_hl_id(arr.items[0], "hl_group item", err);
+        if (ERROR_SET(err)) {
+          goto error;
+        }
+      }
+      for (size_t i = 1; i < arr.size; i++) {
+        int hl_id = object_to_hl_id(arr.items[i], "hl_group item", err);
+        if (ERROR_SET(err)) {
+          goto error;
+        }
+        if (hl_id) {
+          has_hl_multiple = true;
+        }
+      }
+    } else {
+      hl.hl_id = object_to_hl_id(opts->hl_group, "hl_group", err);
+      if (ERROR_SET(err)) {
+        goto error;
+      }
+    }
+    has_hl = hl.hl_id > 0;
+  }
+
   sign.hl_id = (int)opts->sign_hl_group;
   sign.cursorline_hl_id = (int)opts->cursorline_hl_group;
   sign.number_hl_id = (int)opts->number_hl_group;
@@ -565,14 +610,22 @@ Integer nvim_buf_set_extmark(Buffer buffer, Integer ns_id, Integer line, Integer
   if (HAS_KEY(opts, set_extmark, conceal)) {
     hl.flags |= kSHConceal;
     has_hl = true;
-    String c = opts->conceal;
-    if (c.size > 0) {
+    if (opts->conceal.size > 0) {
       int ch;
-      hl.conceal_char = utfc_ptr2schar(c.data, &ch);
-      if (!hl.conceal_char || !vim_isprintc(ch)) {
-        api_set_error(err, kErrorTypeValidation, "conceal char has to be printable");
+      hl.conceal_char = utfc_ptr2schar(opts->conceal.data, &ch);
+      VALIDATE(hl.conceal_char && vim_isprintc(ch), "%s", "conceal char has to be printable", {
         goto error;
-      }
+      });
+    }
+  }
+
+  if (HAS_KEY(opts, set_extmark, conceal_lines)) {
+    hl.flags |= kSHConcealLines;
+    has_hl = true;
+    if (opts->conceal_lines.size > 0) {
+      VALIDATE(*opts->conceal_lines.data == NUL, "%s", "conceal_lines has to be an empty string", {
+        goto error;
+      });
     }
   }
 
@@ -591,6 +644,8 @@ Integer nvim_buf_set_extmark(Buffer buffer, Integer ns_id, Integer line, Integer
       virt_text.pos = kVPosOverlay;
     } else if (strequal("right_align", str.data)) {
       virt_text.pos = kVPosRightAlign;
+    } else if (strequal("eol_right_align", str.data)) {
+      virt_text.pos = kVPosEndOfLineRightAlign;
     } else if (strequal("inline", str.data)) {
       virt_text.pos = kVPosInline;
     } else {
@@ -629,7 +684,17 @@ Integer nvim_buf_set_extmark(Buffer buffer, Integer ns_id, Integer line, Integer
     }
   }
 
-  bool virt_lines_leftcol = opts->virt_lines_leftcol;
+  int virt_lines_flags = opts->virt_lines_leftcol ? kVLLeftcol : 0;
+  if (HAS_KEY(opts, set_extmark, virt_lines_overflow)) {
+    String str = opts->virt_lines_overflow;
+    if (strequal("scroll", str.data)) {
+      virt_lines_flags |= kVLScroll;
+    } else if (!strequal("trunc", str.data)) {
+      VALIDATE_S(false, "virt_lines_overflow", str.data, {
+        goto error;
+      });
+    }
+  }
 
   if (HAS_KEY(opts, set_extmark, virt_lines)) {
     Array a = opts->virt_lines;
@@ -639,7 +704,7 @@ Integer nvim_buf_set_extmark(Buffer buffer, Integer ns_id, Integer line, Integer
       });
       int dummig;
       VirtText jtem = parse_virt_text(a.items[j].data.array, err, &dummig);
-      kv_push(virt_lines.data.virt_lines, ((struct virt_line){ jtem, virt_lines_leftcol }));
+      kv_push(virt_lines.data.virt_lines, ((struct virt_line){ jtem, virt_lines_flags }));
       if (ERROR_SET(err)) {
         goto error;
       }
@@ -763,7 +828,8 @@ Integer nvim_buf_set_extmark(Buffer buffer, Integer ns_id, Integer line, Integer
     }
   } else {
     if (opts->ephemeral) {
-      api_set_error(err, kErrorTypeException, "not yet implemented");
+      api_set_error(err, kErrorTypeException,
+                    "cannot set emphemeral mark outside of a decoration provider");
       goto error;
     }
 
@@ -792,6 +858,25 @@ Integer nvim_buf_set_extmark(Buffer buffer, Integer ns_id, Integer line, Integer
       if (sign.number_hl_id || sign.line_hl_id || sign.cursorline_hl_id) {
         decor_flags |= MT_FLAG_DECOR_SIGNHL;
       }
+    }
+
+    if (has_hl_multiple) {
+      Array arr = opts->hl_group.data.array;
+      for (size_t i = arr.size - 1; i > 0; i--) {  // skip hl_group[0], handled as hl.hl_id below
+        int hl_id = object_to_hl_id(arr.items[i], "hl_group item", err);
+        if (hl_id > 0) {
+          DecorSignHighlight sh = DECOR_SIGN_HIGHLIGHT_INIT;
+          sh.hl_id = hl_id;
+          sh.flags = opts->hl_eol ? kSHHlEol : 0;
+          sh.next = decor_indexed;
+          decor_indexed = decor_put_sh(sh);
+          decor_flags |= MT_FLAG_DECOR_HL;
+        }
+      }
+    }
+
+    if (hl.flags & kSHConcealLines) {
+      decor_flags |= MT_FLAG_DECOR_CONCEAL_LINES;
     }
 
     DecorInline decor = DECOR_INLINE_INIT;
@@ -837,7 +922,7 @@ error:
 
 /// Removes an |extmark|.
 ///
-/// @param buffer Buffer handle, or 0 for current buffer
+/// @param buffer Buffer id, or 0 for current buffer
 /// @param ns_id Namespace id from |nvim_create_namespace()|
 /// @param id Extmark id
 /// @param[out] err   Error details, if any
@@ -857,102 +942,13 @@ Boolean nvim_buf_del_extmark(Buffer buffer, Integer ns_id, Integer id, Error *er
   return extmark_del_id(buf, (uint32_t)ns_id, (uint32_t)id);
 }
 
-uint32_t src2ns(Integer *src_id)
-{
-  if (*src_id == 0) {
-    *src_id = nvim_create_namespace((String)STRING_INIT);
-  }
-  if (*src_id < 0) {
-    return (((uint32_t)1) << 31) - 1;
-  }
-  return (uint32_t)(*src_id);
-}
-
-/// Adds a highlight to buffer.
-///
-/// Useful for plugins that dynamically generate highlights to a buffer
-/// (like a semantic highlighter or linter). The function adds a single
-/// highlight to a buffer. Unlike |matchaddpos()| highlights follow changes to
-/// line numbering (as lines are inserted/removed above the highlighted line),
-/// like signs and marks do.
-///
-/// Namespaces are used for batch deletion/updating of a set of highlights. To
-/// create a namespace, use |nvim_create_namespace()| which returns a namespace
-/// id. Pass it in to this function as `ns_id` to add highlights to the
-/// namespace. All highlights in the same namespace can then be cleared with
-/// single call to |nvim_buf_clear_namespace()|. If the highlight never will be
-/// deleted by an API call, pass `ns_id = -1`.
-///
-/// As a shorthand, `ns_id = 0` can be used to create a new namespace for the
-/// highlight, the allocated id is then returned. If `hl_group` is the empty
-/// string no highlight is added, but a new `ns_id` is still returned. This is
-/// supported for backwards compatibility, new code should use
-/// |nvim_create_namespace()| to create a new empty namespace.
-///
-/// @param buffer     Buffer handle, or 0 for current buffer
-/// @param ns_id      namespace to use or -1 for ungrouped highlight
-/// @param hl_group   Name of the highlight group to use
-/// @param line       Line to highlight (zero-indexed)
-/// @param col_start  Start of (byte-indexed) column range to highlight
-/// @param col_end    End of (byte-indexed) column range to highlight,
-///                   or -1 to highlight to end of line
-/// @param[out] err   Error details, if any
-/// @return The ns_id that was used
-Integer nvim_buf_add_highlight(Buffer buffer, Integer ns_id, String hl_group, Integer line,
-                               Integer col_start, Integer col_end, Error *err)
-  FUNC_API_SINCE(1)
-{
-  buf_T *buf = find_buffer_by_handle(buffer, err);
-  if (!buf) {
-    return 0;
-  }
-
-  VALIDATE_RANGE((line >= 0 && line < MAXLNUM), "line number", {
-    return 0;
-  });
-  VALIDATE_RANGE((col_start >= 0 && col_start <= MAXCOL), "column", {
-    return 0;
-  });
-
-  if (col_end < 0 || col_end > MAXCOL) {
-    col_end = MAXCOL;
-  }
-
-  uint32_t ns = src2ns(&ns_id);
-
-  if (!(line < buf->b_ml.ml_line_count)) {
-    // safety check, we can't add marks outside the range
-    return ns_id;
-  }
-
-  int hl_id = 0;
-  if (hl_group.size > 0) {
-    hl_id = syn_check_group(hl_group.data, hl_group.size);
-  } else {
-    return ns_id;
-  }
-
-  int end_line = (int)line;
-  if (col_end == MAXCOL) {
-    col_end = 0;
-    end_line++;
-  }
-
-  DecorInline decor = DECOR_INLINE_INIT;
-  decor.data.hl.hl_id = hl_id;
-
-  extmark_set(buf, ns, NULL, (int)line, (colnr_T)col_start, end_line, (colnr_T)col_end,
-              decor, MT_FLAG_DECOR_HL, true, false, false, false, NULL);
-  return ns_id;
-}
-
 /// Clears |namespace|d objects (highlights, |extmarks|, virtual text) from
 /// a region.
 ///
 /// Lines are 0-indexed. |api-indexing|  To clear the namespace in the entire
 /// buffer, specify line_start=0 and line_end=-1.
 ///
-/// @param buffer     Buffer handle, or 0 for current buffer
+/// @param buffer     Buffer id, or 0 for current buffer
 /// @param ns_id      Namespace to clear, or -1 to clear all namespaces.
 /// @param line_start Start of range of lines to clear
 /// @param line_end   End of range of lines to clear (exclusive) or -1 to clear
@@ -1053,6 +1049,7 @@ void nvim_set_decoration_provider(Integer ns_id, Dict(set_decoration_provider) *
     { "on_end", &opts->on_end, &p->redraw_end },
     { "_on_hl_def", &opts->_on_hl_def, &p->hl_def },
     { "_on_spell_nav", &opts->_on_spell_nav, &p->spell_nav },
+    { "_on_conceal_line", &opts->_on_conceal_line, &p->conceal_line },
     { NULL, NULL, NULL },
   };
 

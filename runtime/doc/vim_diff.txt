@@ -34,7 +34,8 @@ Defaults                                            *defaults* *nvim-defaults*
   looking differently due to them relying on how highlight groups are defined
   by default. Add ":colorscheme vim" to |init.vim| or
   ":source $VIMRUNTIME/colors/vim.lua" to your color scheme file to restore
-  the old default links and colors.
+  the old default links and colors. See |:highlight| for a list of highlight
+  groups colorschemes should set.
 
 - 'autoindent' is enabled
 - 'autoread' is enabled (works in all UIs, including terminal)
@@ -45,7 +46,9 @@ Defaults                                            *defaults* *nvim-defaults*
 - 'commentstring' defaults to ""
 - 'compatible' is always disabled
 - 'complete' excludes "i"
+- 'completeopt' defaults to "menu,popup"
 - 'define' defaults to "". The C ftplugin sets it to "^\\s*#\\s*define"
+- 'diffopt' defaults to "internal,filler,closeoff,inline:simple,linematch:40"
 - 'directory' defaults to ~/.local/state/nvim/swap// (|xdg|), auto-created
 - 'display' defaults to "lastline"
 - 'encoding' is UTF-8 (cf. 'fileencoding' for file-content encoding)
@@ -122,7 +125,7 @@ fully disable the mouse or popup-menu, do any of the following:
 <
 To remove the default popup-menu without disabling mouse: >vim
   aunmenu PopUp
-  autocmd! nvim_popupmenu
+  autocmd! nvim.popupmenu
 
 To remove only the "How-to disable mouse" menu item (and its separator): >vim
   aunmenu PopUp.How-to\ disable\ mouse
@@ -170,7 +173,7 @@ DEFAULT AUTOCOMMANDS
 Default autocommands exist in the following groups. Use ":autocmd! {group}" to
 remove them and ":autocmd {group}" to see how they're defined.
 
-nvim_terminal:
+nvim.terminal:
 - BufReadCmd: Treats "term://" buffers as |terminal| buffers. |terminal-start|
 - TermClose: A |terminal| buffer started with no arguments (which thus uses
   'shell') and which exits with no error is closed automatically.
@@ -180,7 +183,10 @@ nvim_terminal:
   when 'background' is "light". While this may not reflect the actual
   foreground/background color, it permits 'background' to be retained for a
   nested Nvim instance running in the terminal emulator.
-- TermOpen: Sets default options for |terminal| buffers:
+- TermRequest: Nvim will create extmarks for shells which
+  annotate their prompts with OSC 133 escape sequences, enabling users to
+  quickly navigate between prompts using |[[| and |]]|.
+- TermOpen: Sets default options and mappings for |terminal| buffers:
     - 'nomodifiable'
     - 'undolevels' set to -1
     - 'textwidth' set to 0
@@ -192,11 +198,12 @@ nvim_terminal:
     - 'foldcolumn' set to "0"
     - 'winhighlight' uses |hl-StatusLineTerm| and |hl-StatusLineTermNC| in
       place of |hl-StatusLine| and |hl-StatusLineNC|
+    - |[[| and |]]| to navigate between shell prompts
 
-nvim_cmdwin:
+nvim.cmdwin:
 - CmdwinEnter: Limits syntax sync to maxlines=1 in the |cmdwin|.
 
-nvim_swapfile:
+nvim.swapfile:
 - SwapExists: Skips the swapfile prompt (sets |v:swapchoice| to "e") when the
   swapfile is owned by a running Nvim process. Shows |W325| "Ignoring
   swapfile…" message.
@@ -347,11 +354,14 @@ Options:
 
 - `:set {option}<` removes local value for all |global-local| options.
 - `:setlocal {option}<` copies global value to local value for all options.
+- 'ambiwidth'   cannot be set to empty.
 - 'autoread'    works in the terminal (if it supports "focus" events)
+- 'background'  cannot be set to empty.
 - 'cpoptions'   flags: |cpo-_|
-- 'diffopt'     "linematch" feature
+- 'eadirection' cannot be set to empty.
 - 'exrc'        searches for ".nvim.lua", ".nvimrc", or ".exrc" files. The
                 user is prompted whether to trust the file.
+- 'fileformat'  cannot be set to empty.
 - 'fillchars'   flags: "msgsep", "horiz", "horizup", "horizdown",
                 "vertleft", "vertright", "verthoriz"
 - 'foldcolumn'  supports up to 9 dynamic/fixed columns
@@ -363,14 +373,17 @@ Options:
     - "clean" removes unloaded buffers from the jumplist.
 - the |jumplist|, |changelist|, |alternate-file| or using |mark-motions|.
 - 'laststatus'  global statusline support
+- 'mousemodel'  cannot be set to empty.
 - 'mousescroll' amount to scroll by when scrolling with a mouse
 - 'pumblend'    pseudo-transparent popupmenu
 - 'scrollback'
 - 'shortmess'
     - "F" flag does not affect output from autocommands.
     - "q" flag fully hides macro recording message.
+- 'showcmdloc'  cannot be set to empty.
 - 'signcolumn'  can show multiple signs (dynamic or fixed columns)
 - 'statuscolumn' full control of columns using 'statusline' format
+- 'splitkeep'   cannot be set to empty.
 - 'tabline'     middle-click on tabpage label closes tabpage,
                 and %@Func@foo%X can call any function on mouse-click
 - 'termpastefilter'
@@ -409,6 +422,8 @@ Startup:
 - |-es| and |-Es| have improved behavior:
     - Quits automatically, don't need "-c qa!".
     - Skips swap-file dialog.
+    - Optimized for non-interactive scripts: disables swapfile, shada.
+- |-l| Executes Lua scripts non-interactively.
 - |-s| reads Normal commands from stdin if the script name is "-".
 - Reading text (instead of commands) from stdin |--|:
     - works by default: "-" file is optional
@@ -421,8 +436,11 @@ TUI:
 <
                         *'term'* *E529* *E530* *E531*
 - 'term' reflects the terminal type derived from |$TERM| and other environment
-  checks.  For debugging only; not reliable during startup. >vim
-          :echo &term
+  checks.  Use `:echo &term` to get its value. For debugging only; not
+  reliable during startup.
+  - Note: If you want to detect when Nvim is running in a terminal, use
+    `has('gui_running')` |has()| or see |nvim_list_uis()| for an example of
+    how to inspect the UI channel.
 - "builtin_x" means one of the |builtin-terms| was chosen, because the expected
   terminfo file was not found on the system.
 - Nvim will use 256-colour capability on Linux virtual terminals.  Vim uses
@@ -454,6 +472,7 @@ Upstreamed features                                      *nvim-upstreamed*
 
 These Nvim features were later integrated into Vim.
 
+- 'diffopt' "linematch" feature
 - 'fillchars' flags: "eob"
 - 'jumpoptions' "stack" behavior
 - 'wildoptions' flags: "pum" enables popupmenu for wildmode completion
@@ -753,8 +772,8 @@ Options:
     noremap <C-\><C-G> <C-\><C-N><Cmd>startinsert<CR>
     cnoremap <C-\><C-G> <C-\><C-N><Cmd>startinsert<CR>
     inoremap <C-\><C-G> <C-X><C-Z>
-    autocmd CmdWinEnter * noremap <buffer> <C-C> <C-C>
-    autocmd CmdWinEnter * inoremap <buffer> <C-C> <C-C>
+    autocmd CmdwinEnter * noremap <buffer> <C-C> <C-C>
+    autocmd CmdwinEnter * inoremap <buffer> <C-C> <C-C>
 
     lua << EOF
       vim.on_key(function(c)

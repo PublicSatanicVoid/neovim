@@ -35,6 +35,11 @@ include(InstallHelpers)
 include(PreventInTreeBuilds)
 include(Util)
 
+if(NOT PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
+  # Auto-create a .gitignore in the specified "build" directory.
+  file(GENERATE OUTPUT .gitignore CONTENT "*")
+endif()
+
 #-------------------------------------------------------------------------------
 # User settings
 #-------------------------------------------------------------------------------
@@ -140,20 +145,15 @@ endif()
 # If not in a git repo (e.g., a tarball) these tokens define the complete
 # version string, else they are combined with the result of `git describe`.
 set(NVIM_VERSION_MAJOR 0)
-set(NVIM_VERSION_MINOR 11)
+set(NVIM_VERSION_MINOR 12)
 set(NVIM_VERSION_PATCH 0)
 set(NVIM_VERSION_PRERELEASE "-dev") # for package maintainers
 
 # API level
 set(NVIM_API_LEVEL 13)        # Bump this after any API/stdlib change.
 set(NVIM_API_LEVEL_COMPAT 0)  # Adjust this after a _breaking_ API change.
-set(NVIM_API_PRERELEASE true)
+set(NVIM_API_PRERELEASE false)
 
-# Build-type: RelWithDebInfo
-# /Og means something different in MSVC
-if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
-   set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -Og -g")
-endif()
 # We _want_ assertions in RelWithDebInfo build-type.
 if(CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES DNDEBUG)
   string(REPLACE "-DNDEBUG" "" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
@@ -309,6 +309,7 @@ ExternalProject_Add(uncrustify
   DOWNLOAD_DIR ${DEPS_DOWNLOAD_DIR}/uncrustify
   CMAKE_ARGS ${DEPS_CMAKE_ARGS}
     -D CMAKE_RUNTIME_OUTPUT_DIRECTORY=${DEPS_BIN_DIR}
+    -D CMAKE_SKIP_RPATH=true
   EXCLUDE_FROM_ALL TRUE
   ${EXTERNALPROJECT_OPTIONS})
 
@@ -326,3 +327,36 @@ if(USE_BUNDLED_BUSTED)
 else()
   add_custom_target(lua_dev_deps)
 endif()
+
+if (CMAKE_SYSTEM_PROCESSOR MATCHES arm64)
+  set(LUALS_ARCH arm64)
+else()
+  set(LUALS_ARCH x64)
+endif()
+
+set(LUALS_VERSION 3.13.9)
+set(LUALS "lua-language-server-${LUALS_VERSION}-${CMAKE_SYSTEM_NAME}-${LUALS_ARCH}")
+set(LUALS_TARBALL ${LUALS}.tar.gz)
+set(LUALS_URL https://github.com/LuaLS/lua-language-server/releases/download/${LUALS_VERSION}/${LUALS_TARBALL})
+
+ExternalProject_Add(download_luals
+  URL ${LUALS_URL}
+  DOWNLOAD_DIR ${DEPS_DOWNLOAD_DIR}/luals
+  SOURCE_DIR ${DEPS_BIN_DIR}/luals
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND ""
+  EXCLUDE_FROM_ALL TRUE
+  DOWNLOAD_NO_PROGRESS TRUE
+  CMAKE_CACHE_ARGS ${DEPS_CMAKE_CACHE_ARGS})
+
+file(GLOB_RECURSE LUAFILES runtime/*.lua)
+add_target(luals
+  COMMAND ${DEPS_BIN_DIR}/luals/bin/lua-language-server
+    --configpath=${PROJECT_SOURCE_DIR}/.luarc.json
+    --check=${PROJECT_SOURCE_DIR}/runtime
+    --checklevel=Hint
+  DEPENDS ${LUAFILES}
+  CUSTOM_COMMAND_ARGS USES_TERMINAL)
+
+add_dependencies(luals download_luals)

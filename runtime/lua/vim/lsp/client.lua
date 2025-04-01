@@ -6,7 +6,7 @@ local ms = lsp.protocol.Methods
 local changetracking = lsp._changetracking
 local validate = vim.validate
 
---- @alias vim.lsp.client.on_init_cb fun(client: vim.lsp.Client, initialize_result: lsp.InitializeResult)
+--- @alias vim.lsp.client.on_init_cb fun(client: vim.lsp.Client, init_result: lsp.InitializeResult)
 --- @alias vim.lsp.client.on_attach_cb fun(client: vim.lsp.Client, bufnr: integer)
 --- @alias vim.lsp.client.on_exit_cb fun(code: integer, signal: integer, client_id: integer)
 --- @alias vim.lsp.client.before_init_cb fun(params: lsp.InitializeParams, config: vim.lsp.ClientConfig)
@@ -63,6 +63,9 @@ local validate = vim.validate
 --- folder in this list. See `workspaceFolders` in the LSP spec.
 --- @field workspace_folders? lsp.WorkspaceFolder[]
 ---
+--- (default false) Server requires a workspace (no "single file" support).
+--- @field workspace_required? boolean
+---
 --- Map overriding the default capabilities defined by |vim.lsp.protocol.make_client_capabilities()|,
 --- passed to the language server on initialization. Hint: use make_client_capabilities() and modify
 --- its result.
@@ -108,11 +111,11 @@ local validate = vim.validate
 --- You can use this to modify parameters before they are sent.
 --- @field before_init? fun(params: lsp.InitializeParams, config: vim.lsp.ClientConfig)
 ---
---- Callback invoked after LSP "initialize", where `result` is a table of `capabilities`
---- and anything else the server may send. For example, clangd sends
---- `initialize_result.offsetEncoding` if `capabilities.offsetEncoding` was sent to it.
---- You can only modify the `client.offset_encoding` here before any notifications are sent.
---- @field on_init? elem_or_list<fun(client: vim.lsp.Client, initialize_result: lsp.InitializeResult)>
+--- Callback invoked after LSP "initialize", where `result` is a table of `capabilities` and
+--- anything else the server may send. For example, clangd sends `init_result.offsetEncoding` if
+--- `capabilities.offsetEncoding` was sent to it. You can only modify the `client.offset_encoding`
+--- here before any notifications are sent.
+--- @field on_init? elem_or_list<fun(client: vim.lsp.Client, init_result: lsp.InitializeResult)>
 ---
 --- Callback invoked on client exit.
 ---   - code: exit code of the process
@@ -506,7 +509,7 @@ function Client:initialize()
     root_path = vim.uri_to_fname(root_uri)
   end
 
-  local initialize_params = {
+  local init_params = {
     -- The process Id of the parent process that started the server. Is null if
     -- the process has not been started by another process.  If the parent
     -- process is not alive then the server should exit (see exit notification)
@@ -536,15 +539,15 @@ function Client:initialize()
   self:_run_callbacks(
     { self._before_init_cb },
     lsp.client_errors.BEFORE_INIT_CALLBACK_ERROR,
-    initialize_params,
+    init_params,
     config
   )
 
-  log.trace(self._log_prefix, 'initialize_params', initialize_params)
+  log.trace(self._log_prefix, 'init_params', init_params)
 
   local rpc = self.rpc
 
-  rpc.request('initialize', initialize_params, function(init_err, result)
+  rpc.request('initialize', init_params, function(init_err, result)
     assert(not init_err, tostring(init_err))
     assert(result, 'server sent empty result')
     rpc.notify('initialized', vim.empty_dict())
@@ -702,14 +705,14 @@ local wait_result_reason = { [-1] = 'timeout', [-2] = 'interrupted', [-3] = 'err
 ---
 --- @param ... string List to write to the buffer
 local function err_message(...)
-  local message = table.concat(vim.iter({ ... }):flatten():totable())
+  local chunks = { { table.concat(vim.iter({ ... }):flatten():totable()) } }
   if vim.in_fast_event() then
     vim.schedule(function()
-      api.nvim_err_writeln(message)
+      api.nvim_echo(chunks, true, { err = true })
       api.nvim_command('redraw')
     end)
   else
-    api.nvim_err_writeln(message)
+    api.nvim_echo(chunks, true, { err = true })
     api.nvim_command('redraw')
   end
 end
@@ -904,18 +907,20 @@ end
 function Client:_get_registration(method, bufnr)
   bufnr = vim._resolve_bufnr(bufnr)
   for _, reg in ipairs(self.registrations[method] or {}) do
-    if not reg.registerOptions or not reg.registerOptions.documentSelector then
+    local regoptions = reg.registerOptions --[[@as {documentSelector:lsp.TextDocumentFilter[]}]]
+    if not regoptions or not regoptions.documentSelector then
       return reg
     end
-    local documentSelector = reg.registerOptions.documentSelector
+    local documentSelector = regoptions.documentSelector
     local language = self:_get_language_id(bufnr)
     local uri = vim.uri_from_bufnr(bufnr)
     local fname = vim.uri_to_fname(uri)
     for _, filter in ipairs(documentSelector) do
+      local flang, fscheme, fpat = filter.language, filter.scheme, filter.pattern
       if
-        not (filter.language and language ~= filter.language)
-        and not (filter.scheme and not vim.startswith(uri, filter.scheme .. ':'))
-        and not (filter.pattern and not vim.glob.to_lpeg(filter.pattern):match(fname))
+        not (flang and language ~= flang)
+        and not (fscheme and not vim.startswith(uri, fscheme .. ':'))
+        and not (type(fpat) == 'string' and not vim.glob.to_lpeg(fpat):match(fname))
       then
         return reg
       end
@@ -1054,7 +1059,7 @@ function Client:supports_method(method, bufnr)
     --- @diagnostic disable-next-line:no-unknown
     bufnr = bufnr.bufnr
   end
-  local required_capability = lsp._request_name_to_capability[method]
+  local required_capability = lsp.protocol._request_name_to_capability[method]
   -- if we don't know about the method, assume that the client supports it.
   if not required_capability then
     return true

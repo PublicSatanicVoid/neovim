@@ -5,7 +5,7 @@ local api = vim.api
 
 local M = {}
 
-local augroup = api.nvim_create_augroup('vim_lsp_diagnostic', {})
+local augroup = api.nvim_create_augroup('nvim.lsp.diagnostic', {})
 
 local DEFAULT_CLIENT_ID = -1
 
@@ -20,7 +20,7 @@ end
 ---@return lsp.DiagnosticSeverity
 local function severity_vim_to_lsp(severity)
   if type(severity) == 'string' then
-    severity = vim.diagnostic.severity[severity]
+    severity = vim.diagnostic.severity[severity] --- @type integer
   end
   return severity
 end
@@ -89,6 +89,7 @@ local function diagnostic_lsp_to_vim(diagnostics, bufnr, client_id)
         string.format('Unsupported Markup message from LSP client %d', client_id),
         vim.lsp.log_levels.ERROR
       )
+      --- @diagnostic disable-next-line: undefined-field,no-unknown
       message = diagnostic.message.value
     end
     local line = buf_lines and buf_lines[start.line + 1] or ''
@@ -199,16 +200,9 @@ function M.get_namespace(client_id, is_pull)
   end
 end
 
-local function convert_severity(opt)
-  if type(opt) == 'table' and not opt.severity and opt.severity_limit then
-    vim.deprecate('severity_limit', '{min = severity} See vim.diagnostic.severity', '0.11')
-    opt.severity = { min = severity_lsp_to_vim(opt.severity_limit) }
-  end
-end
-
 --- @param uri string
 --- @param client_id? integer
---- @param diagnostics vim.Diagnostic[]
+--- @param diagnostics lsp.Diagnostic[]
 --- @param is_pull boolean
 local function handle_diagnostics(uri, client_id, diagnostics, is_pull)
   local fname = vim.uri_to_fname(uri)
@@ -236,10 +230,10 @@ end
 --- See |vim.diagnostic.config()| for configuration options.
 ---
 ---@param _ lsp.ResponseError?
----@param result lsp.PublishDiagnosticsParams
+---@param params lsp.PublishDiagnosticsParams
 ---@param ctx lsp.HandlerContext
-function M.on_publish_diagnostics(_, result, ctx)
-  handle_diagnostics(result.uri, ctx.client_id, result.diagnostics, false)
+function M.on_publish_diagnostics(_, params, ctx)
+  handle_diagnostics(params.uri, ctx.client_id, params.diagnostics, false)
 end
 
 --- |lsp-handler| for the method "textDocument/diagnostic"
@@ -302,7 +296,6 @@ end
 ---@private
 function M.get_line_diagnostics(bufnr, line_nr, opts, client_id)
   vim.deprecate('vim.lsp.diagnostic.get_line_diagnostics', 'vim.diagnostic.get', '0.12')
-  convert_severity(opts)
   local diag_opts = {} --- @type vim.diagnostic.GetOpts
 
   if opts and opts.severity then

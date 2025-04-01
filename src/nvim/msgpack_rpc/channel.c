@@ -44,17 +44,20 @@
 
 static void log_request(char *dir, uint64_t channel_id, uint32_t req_id, const char *name)
 {
-  DLOGN("RPC %s %" PRIu64 ": %s id=%u: %s\n", dir, channel_id, REQ, req_id, name);
+  logmsg(LOGLVL_DBG, "RPC: ", NULL, -1, false, "%s %" PRIu64 ": %s id=%u: %s\n", dir, channel_id,
+         REQ, req_id, name);
 }
 
 static void log_response(char *dir, uint64_t channel_id, char *kind, uint32_t req_id)
 {
-  DLOGN("RPC %s %" PRIu64 ": %s id=%u\n", dir, channel_id, kind, req_id);
+  logmsg(LOGLVL_DBG, "RPC: ", NULL, -1, false, "%s %" PRIu64 ": %s id=%u\n", dir, channel_id, kind,
+         req_id);
 }
 
 static void log_notify(char *dir, uint64_t channel_id, const char *name)
 {
-  DLOGN("RPC %s %" PRIu64 ": %s %s\n", dir, channel_id, NOT, name);
+  logmsg(LOGLVL_DBG, "RPC: ", NULL, -1, false, "%s %" PRIu64 ": %s %s\n", dir, channel_id, NOT,
+         name);
 }
 
 #else
@@ -219,11 +222,9 @@ static size_t receive_msgpack(RStream *stream, const char *rbuf, size_t c, void 
   }
 
   if (eof) {
-    channel_close(channel->id, kChannelPartRpc, NULL);
     char buf[256];
-    snprintf(buf, sizeof(buf), "ch %" PRIu64 " was closed by the client",
-             channel->id);
-    chan_close_with_error(channel, buf, LOGLVL_INF);
+    snprintf(buf, sizeof(buf), "ch %" PRIu64 " was closed by the peer", channel->id);
+    chan_close_on_err(channel, buf, LOGLVL_INF);
   }
 
   channel_decref(channel);
@@ -266,7 +267,7 @@ static void parse_msgpack(Channel *channel)
                  "ch %" PRIu64 " (type=%" PRIu32 ") returned a response with an unknown request "
                  "id %" PRIu32 ". Ensure the client is properly synchronized",
                  channel->id, (unsigned)channel->rpc.client_type, p->request_id);
-        chan_close_with_error(channel, buf, LOGLVL_ERR);
+        chan_close_on_err(channel, buf, LOGLVL_ERR);
         return;
       }
       frame->returned = true;
@@ -290,7 +291,7 @@ static void parse_msgpack(Channel *channel)
 
       Object res = p->result;
       if (p->result.type != kObjectTypeArray) {
-        chan_close_with_error(channel, "msgpack-rpc request args has to be an array", LOGLVL_ERR);
+        chan_close_on_err(channel, "msgpack-rpc request args must be an array", LOGLVL_ERR);
         return;
       }
       Array arg = res.data.array;
@@ -299,7 +300,7 @@ static void parse_msgpack(Channel *channel)
   }
 
   if (unpacker_closed(p)) {
-    chan_close_with_error(channel, p->unpack_error.msg, LOGLVL_INF);
+    chan_close_on_err(channel, p->unpack_error.msg, LOGLVL_INF);
     api_clear_error(&p->unpack_error);
   }
 }
@@ -417,7 +418,7 @@ static bool channel_write(Channel *channel, WBuffer *buffer)
              "ch %" PRIu64 ": stream write failed. "
              "RPC canceled; closing channel",
              channel->id);
-    chan_close_with_error(channel, buf, LOGLVL_ERR);
+    chan_close_on_err(channel, buf, LOGLVL_ERR);
   }
 
   return success;
@@ -436,7 +437,7 @@ static void internal_read_event(void **argv)
   if (p->read_size) {
     // This should not happen, as WBuffer is one single serialized message.
     if (!channel->rpc.closed) {
-      chan_close_with_error(channel, "internal channel: internal error", LOGLVL_ERR);
+      chan_close_on_err(channel, "internal channel: internal error", LOGLVL_ERR);
     }
   }
 
@@ -482,15 +483,28 @@ void rpc_close(Channel *channel)
   }
 
   channel->rpc.closed = true;
+
+  // Scheduled to avoid running UILeave autocommands in a libuv handler.
+  multiqueue_put(main_loop.fast_events, rpc_close_event, channel);
+}
+
+static void rpc_close_event(void **argv)
+{
+  Channel *channel = (Channel *)argv[0];
+  assert(channel);
+
   channel_decref(channel);
 
-  if (channel->streamtype == kChannelStreamStdio
-      || (channel->id == ui_client_channel_id && channel->streamtype != kChannelStreamProc)) {
-    if (channel->streamtype == kChannelStreamStdio) {
+  bool is_ui_client = ui_client_channel_id && channel->id == ui_client_channel_id;
+  if (is_ui_client || channel->streamtype == kChannelStreamStdio) {
+    if (!is_ui_client) {
       // Avoid hanging when there are no other UIs and a prompt is triggered on exit.
       remote_ui_disconnect(channel->id);
     }
-    exit_from_channel(0);
+
+    if (!channel->detach) {
+      exit_on_closed_chan(channel->exit_status == -1 ? 0 : channel->exit_status);
+    }
   }
 }
 
@@ -504,9 +518,9 @@ void rpc_free(Channel *channel)
   api_free_dict(channel->rpc.info);
 }
 
-static void chan_close_with_error(Channel *channel, char *msg, int loglevel)
+/// Closes a channel after receiving fatal error, and logs a message.
+static void chan_close_on_err(Channel *channel, char *msg, int loglevel)
 {
-  LOG(loglevel, "RPC: %s", msg);
   for (size_t i = 0; i < kv_size(channel->rpc.call_stack); i++) {
     ChannelCallFrame *frame = kv_A(channel->rpc.call_stack, i);
     frame->returned = true;
@@ -515,6 +529,8 @@ static void chan_close_with_error(Channel *channel, char *msg, int loglevel)
   }
 
   channel_close(channel->id, kChannelPartRpc, NULL);
+
+  LOG(loglevel, "RPC: %s", msg);
 }
 
 static void serialize_request(Channel **chans, size_t nchans, uint32_t request_id,

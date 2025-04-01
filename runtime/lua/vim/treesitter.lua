@@ -34,8 +34,6 @@ M.minimum_language_version = vim._ts_get_minimum_language_version()
 function M._create_parser(bufnr, lang, opts)
   bufnr = vim._resolve_bufnr(bufnr)
 
-  vim.fn.bufload(bufnr)
-
   local self = LanguageTree.new(bufnr, lang, opts)
 
   local function bytes_cb(_, ...)
@@ -60,8 +58,6 @@ function M._create_parser(bufnr, lang, opts)
     false,
     { on_bytes = bytes_cb, on_detach = detach_cb, on_reload = reload_cb, preview = true }
   )
-
-  self:parse()
 
   return self
 end
@@ -104,6 +100,9 @@ function M.get_parser(bufnr, lang, opts)
       return nil, err_msg
     end
   elseif parsers[bufnr] == nil or parsers[bufnr]:lang() ~= lang then
+    if not api.nvim_buf_is_loaded(bufnr) then
+      error(('Buffer %s must be loaded to create parser'):format(bufnr))
+    end
     local parser = vim.F.npcall(M._create_parser, bufnr, lang, opts)
     if not parser then
       local err_msg =
@@ -151,7 +150,7 @@ end
 
 --- Returns the node's range or an unpacked range table
 ---
----@param node_or_range (TSNode | table) Node or table of positions
+---@param node_or_range TSNode|Range4 Node or table of positions
 ---
 ---@return integer start_row
 ---@return integer start_col
@@ -159,7 +158,8 @@ end
 ---@return integer end_col
 function M.get_node_range(node_or_range)
   if type(node_or_range) == 'table' then
-    return unpack(node_or_range)
+    --- @cast node_or_range -TSNode LuaLS bug
+    return M._range.unpack4(node_or_range)
   else
     return node_or_range:range(false)
   end
@@ -240,7 +240,9 @@ function M.node_contains(node, range)
   -- allow a table so nodes can be mocked
   vim.validate('node', node, { 'userdata', 'table' })
   vim.validate('range', range, M._range.validate, 'integer list with 4 or 6 elements')
-  return M._range.contains({ node:range() }, range)
+  --- @diagnostic disable-next-line: missing-fields LuaLS bug
+  local nrange = { node:range() } --- @type Range4
+  return M._range.contains(nrange, range)
 end
 
 --- Returns a list of highlight captures at the given position
@@ -286,15 +288,19 @@ function M.get_captures_at_pos(bufnr, row, col)
 
     local iter = q:query():iter_captures(root, buf_highlighter.bufnr, row, row + 1)
 
-    for id, node, metadata in iter do
+    for id, node, metadata, match in iter do
       if M.is_in_node_range(node, row, col) then
         ---@diagnostic disable-next-line: invisible
         local capture = q._query.captures[id] -- name of the capture in the query
         if capture ~= nil then
-          table.insert(
-            matches,
-            { capture = capture, metadata = metadata, lang = tree:lang(), id = id }
-          )
+          local _, pattern_id = match:info()
+          table.insert(matches, {
+            capture = capture,
+            metadata = metadata,
+            lang = tree:lang(),
+            id = id,
+            pattern_id = pattern_id,
+          })
         end
       end
     end
@@ -304,7 +310,7 @@ end
 
 --- Returns a list of highlight capture names under the cursor
 ---
----@param winnr (integer|nil) Window handle or 0 for current window (default)
+---@param winnr (integer|nil): |window-ID| or 0 for current window (default)
 ---
 ---@return string[] List of capture names
 function M.get_captures_at_cursor(winnr)
@@ -397,6 +403,8 @@ end
 --- Note: By default, disables regex syntax highlighting, which may be required for some plugins.
 --- In this case, add `vim.bo.syntax = 'on'` after the call to `start`.
 ---
+--- Note: By default, the highlighter parses code asynchronously, using a segment time of 3ms.
+---
 --- Example:
 ---
 --- ```lua
@@ -408,10 +416,18 @@ end
 --- })
 --- ```
 ---
----@param bufnr (integer|nil) Buffer to be highlighted (default: current buffer)
----@param lang (string|nil) Language of the parser (default: from buffer filetype)
+---@param bufnr integer? Buffer to be highlighted (default: current buffer)
+---@param lang string? Language of the parser (default: from buffer filetype)
 function M.start(bufnr, lang)
   bufnr = vim._resolve_bufnr(bufnr)
+  -- Ensure buffer is loaded. `:edit` over `bufload()` to show swapfile prompt.
+  if not api.nvim_buf_is_loaded(bufnr) then
+    if api.nvim_buf_get_name(bufnr) ~= '' then
+      pcall(api.nvim_buf_call, bufnr, vim.cmd.edit)
+    else
+      vim.fn.bufload(bufnr)
+    end
+  end
   local parser = assert(M.get_parser(bufnr, lang, { error = false }))
   M.highlighter.new(parser)
 end

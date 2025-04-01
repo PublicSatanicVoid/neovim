@@ -153,7 +153,7 @@ M.funcs = {
 
     ]=],
     name = 'append',
-    params = { { 'lnum', 'integer' }, { 'text', 'string|string[]' } },
+    params = { { 'lnum', 'integer|string' }, { 'text', 'string|string[]' } },
     returns = '0|1',
     signature = 'append({lnum}, {text})',
   },
@@ -1225,16 +1225,17 @@ M.funcs = {
     args = 1,
     base = 1,
     desc = [=[
-      Get the amount of indent for line {lnum} according the C
-      indenting rules, as with 'cindent'.
+      Get the amount of indent for line {lnum} according the
+      |C-indenting| rules, as with 'cindent'.
       The indent is counted in spaces, the value of 'tabstop' is
       relevant.  {lnum} is used just like in |getline()|.
       When {lnum} is invalid -1 is returned.
-      See |C-indenting|.
+
+      To get or set indent of lines in a string, see |vim.text.indent()|.
 
     ]=],
     name = 'cindent',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'cindent({lnum})',
   },
@@ -1398,7 +1399,8 @@ M.funcs = {
       		typed text only, or the last completion after
       		no item is selected when using the <Up> or
       		<Down> keys)
-         inserted	Inserted string. [NOT IMPLEMENTED YET]
+         completed	Return a dictionary containing the entries of
+      		the currently selected index item.
          preview_winid     Info floating preview window id.
          preview_bufnr     Info floating preview buffer id.
 
@@ -1661,7 +1663,7 @@ M.funcs = {
     args = { 1, 3 },
     base = 1,
     name = 'cursor',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' }, { 'off', 'integer' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' }, { 'off', 'integer' } },
     signature = 'cursor({lnum}, {col} [, {off}])',
   },
   cursor__1 = {
@@ -1896,7 +1898,7 @@ M.funcs = {
 
     ]=],
     name = 'diff_filler',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'diff_filler({lnum})',
   },
@@ -1916,7 +1918,7 @@ M.funcs = {
 
     ]=],
     name = 'diff_hlID',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' } },
     signature = 'diff_hlID({lnum}, {col})',
   },
   digraph_get = {
@@ -2480,7 +2482,8 @@ M.funcs = {
       When {expr3} is omitted then "force" is assumed.
 
       {expr1} is changed when {expr2} is not empty.  If necessary
-      make a copy of {expr1} first.
+      make a copy of {expr1} first or use |extendnew()| to return a
+      new List/Dictionary.
       {expr2} remains unchanged.
       When {expr1} is locked and {expr2} is not empty the operation
       fails.
@@ -2912,7 +2915,7 @@ M.funcs = {
 
     ]=],
     name = 'foldclosed',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'foldclosed({lnum})',
   },
@@ -2928,7 +2931,7 @@ M.funcs = {
 
     ]=],
     name = 'foldclosedend',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'foldclosedend({lnum})',
   },
@@ -2949,7 +2952,7 @@ M.funcs = {
 
     ]=],
     name = 'foldlevel',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'foldlevel({lnum})',
   },
@@ -2990,7 +2993,7 @@ M.funcs = {
 
     ]=],
     name = 'foldtextresult',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'string',
     signature = 'foldtextresult({lnum})',
   },
@@ -3470,15 +3473,17 @@ M.funcs = {
     signature = 'getchangelist([{buf}])',
   },
   getchar = {
-    args = { 0, 1 },
+    args = { 0, 2 },
     desc = [=[
       Get a single character from the user or input stream.
-      If {expr} is omitted, wait until a character is available.
+      If {expr} is omitted or is -1, wait until a character is
+      	available.
       If {expr} is 0, only get a character when one is available.
       	Return zero otherwise.
       If {expr} is 1, only check if a character is available, it is
       	not consumed.  Return zero if no character available.
-      If you prefer always getting a string use |getcharstr()|.
+      If you prefer always getting a string use |getcharstr()|, or
+      specify |FALSE| as "number" in {opts}.
 
       Without {expr} and when {expr} is 0 a whole character or
       special key is returned.  If it is a single character, the
@@ -3488,7 +3493,8 @@ M.funcs = {
       starting with 0x80 (decimal: 128).  This is the same value as
       the String "\<Key>", e.g., "\<Left>".  The returned value is
       also a String when a modifier (shift, control, alt) was used
-      that is not included in the character.
+      that is not included in the character.  |keytrans()| can also
+      be used to convert a returned String into a readable form.
 
       When {expr} is 0 and Esc is typed, there will be a short delay
       while Vim waits to see if this is the start of an escape
@@ -3499,6 +3505,32 @@ M.funcs = {
       Use nr2char() to convert it to a String.
 
       Use getcharmod() to obtain any additional modifiers.
+
+      The optional argument {opts} is a Dict and supports the
+      following items:
+
+      	cursor		A String specifying cursor behavior
+      			when waiting for a character.
+      			"hide": hide the cursor.
+      			"keep": keep current cursor unchanged.
+      			"msg": move cursor to message area.
+      			(default: automagically decide
+      			between "keep" and "msg")
+
+      	number		If |TRUE|, return a Number when getting
+      			a single character.
+      			If |FALSE|, the return value is always
+      			converted to a String, and an empty
+      			String (instead of 0) is returned when
+      			no character is available.
+      			(default: |TRUE|)
+
+      	simplify	If |TRUE|, include modifiers in the
+      			character if possible.  E.g., return
+      			the same value for CTRL-I and <Tab>.
+      			If |FALSE|, don't include modifiers in
+      			the character.
+      			(default: |TRUE|)
 
       When the user clicks a mouse button, the mouse event will be
       returned.  The position can then be found in |v:mouse_col|,
@@ -3537,9 +3569,9 @@ M.funcs = {
       <
     ]=],
     name = 'getchar',
-    params = { { 'expr', '0|1' } },
-    returns = 'integer',
-    signature = 'getchar([{expr}])',
+    params = { { 'expr', '-1|0|1' }, { 'opts', 'table' } },
+    returns = 'integer|string',
+    signature = 'getchar([{expr} [, {opts}]])',
   },
   getcharmod = {
     desc = [=[
@@ -3612,21 +3644,13 @@ M.funcs = {
     signature = 'getcharsearch()',
   },
   getcharstr = {
-    args = { 0, 1 },
+    args = { 0, 2 },
     desc = [=[
-      Get a single character from the user or input stream as a
-      string.
-      If {expr} is omitted, wait until a character is available.
-      If {expr} is 0 or false, only get a character when one is
-      	available.  Return an empty string otherwise.
-      If {expr} is 1 or true, only check if a character is
-      	available, it is not consumed.  Return an empty string
-      	if no character is available.
-      Otherwise this works like |getchar()|, except that a number
-      result is converted to a string.
+      The same as |getchar()|, except that this always returns a
+      String, and "number" isn't allowed in {opts}.
     ]=],
     name = 'getcharstr',
-    params = { { 'expr', '0|1' } },
+    params = { { 'expr', '-1|0|1' }, { 'opts', 'table' } },
     returns = 'string',
     signature = 'getcharstr([{expr}])',
   },
@@ -4102,7 +4126,7 @@ M.funcs = {
     args = { 2 },
     base = 1,
     name = 'getline',
-    params = { { 'lnum', 'integer' }, { 'end', 'true|number|string|table' } },
+    params = { { 'lnum', 'integer|string' }, { 'end', 'true|number|string|table' } },
     returns = 'string|string[]',
   },
   getloclist = {
@@ -4670,6 +4694,25 @@ M.funcs = {
     returns = 'vim.fn.getscriptinfo.ret[]',
     signature = 'getscriptinfo([{opts}])',
   },
+  getstacktrace = {
+    args = 0,
+    desc = [=[
+      Returns the current stack trace of Vim scripts.
+      Stack trace is a |List|, of which each item is a |Dictionary|
+      with the following items:
+          funcref	The funcref if the stack is at a function,
+      		otherwise this item is omitted.
+          event	The string of the event description if the
+      		stack is at an autocmd event, otherwise this
+      		item is omitted.
+          lnum	The line number in the script on the stack.
+          filepath	The file path of the script on the stack.
+    ]=],
+    name = 'getstacktrace',
+    params = {},
+    returns = 'table[]',
+    signature = 'getstacktrace()',
+  },
   gettabinfo = {
     args = { 0, 1 },
     base = 1,
@@ -5078,6 +5121,7 @@ M.funcs = {
       	fname_case	Case in file names matters (for Darwin and MS-Windows
       			this is not present).
       	gui_running	Nvim has a GUI.
+      	hurd		GNU/Hurd system.
       	iconv		Can use |iconv()| for conversion.
       	linux		Linux system.
       	mac		MacOS system.
@@ -5429,6 +5473,8 @@ M.funcs = {
       of 'tabstop' is relevant.  {lnum} is used just like in
       |getline()|.
       When {lnum} is invalid -1 is returned.
+
+      To get or set indent of lines in a string, see |vim.text.indent()|.
 
     ]=],
     name = 'indent',
@@ -6328,7 +6374,7 @@ M.funcs = {
 
     ]=],
     name = 'line2byte',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'line2byte({lnum})',
   },
@@ -6344,7 +6390,7 @@ M.funcs = {
 
     ]=],
     name = 'lispindent',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'lispindent({lnum})',
   },
@@ -6448,7 +6494,9 @@ M.funcs = {
     base = 1,
     desc = [=[
       Evaluate Lua expression {expr} and return its result converted
-      to Vim data structures. See |lua-eval| for more details.
+      to Vim data structures. See |lua-eval| for details.
+
+      See also |v:lua-call|.
 
     ]=],
     lua = false,
@@ -6552,9 +6600,8 @@ M.funcs = {
       When {abbr} is there and it is |TRUE| use abbreviations
       instead of mappings.
 
-      When {dict} is there and it is |TRUE| return a dictionary
-      containing all the information of the mapping with the
-      following items:			*mapping-dict*
+      When {dict} is |TRUE|, return a dictionary describing the
+      mapping, with these items:		*mapping-dict*
         "lhs"	     The {lhs} of the mapping as it would be typed
         "lhsraw"   The {lhs} of the mapping as raw bytes
         "lhsrawalt" The {lhs} of the mapping as raw bytes, alternate
@@ -6616,7 +6663,7 @@ M.funcs = {
       { 'abbr', 'boolean' },
       { 'dict', 'true' },
     },
-    returns = 'string|table<string,any>',
+    returns = 'table<string,any>',
   },
   mapcheck = {
     args = { 1, 3 },
@@ -6715,7 +6762,7 @@ M.funcs = {
     args = { 1, 3 },
     base = 1,
     name = 'mapset',
-    params = { { 'mode', 'string' }, { 'abbr', 'boolean' }, { 'dict', 'boolean' } },
+    params = { { 'mode', 'string' }, { 'abbr', 'boolean' }, { 'dict', 'table<string,any>' } },
     signature = 'mapset({mode}, {abbr}, {dict})',
   },
   mapset__1 = {
@@ -6759,7 +6806,7 @@ M.funcs = {
       <
     ]=],
     name = 'mapset',
-    params = { { 'dict', 'boolean' } },
+    params = { { 'dict', 'table<string,any>' } },
     signature = 'mapset({dict})',
   },
   match = {
@@ -7103,6 +7150,9 @@ M.funcs = {
       		given sequence.
           limit	Maximum number of matches in {list} to be
       		returned.  Zero means no limit.
+          camelcase	Use enhanced camel case scoring making results
+      		better suited for completion related to
+      		programming languages.  Defaults to v:true.
 
       If {list} is a list of dictionaries, then the optional {dict}
       argument supports the following additional items:
@@ -7155,7 +7205,7 @@ M.funcs = {
       <results in `['two one']`.
     ]=],
     name = 'matchfuzzy',
-    params = { { 'list', 'any[]' }, { 'str', 'string' }, { 'dict', 'string' } },
+    params = { { 'list', 'any[]' }, { 'str', 'string' }, { 'dict', 'table' } },
     signature = 'matchfuzzy({list}, {str} [, {dict}])',
   },
   matchfuzzypos = {
@@ -7184,7 +7234,7 @@ M.funcs = {
       <results in `[[{"id": 10, "text": "hello"}], [[2, 3]], [127]]`
     ]=],
     name = 'matchfuzzypos',
-    params = { { 'list', 'any[]' }, { 'str', 'string' }, { 'dict', 'string' } },
+    params = { { 'list', 'any[]' }, { 'str', 'string' }, { 'dict', 'table' } },
     signature = 'matchfuzzypos({list}, {str} [, {dict}])',
   },
   matchlist = {
@@ -7505,10 +7555,9 @@ M.funcs = {
       If {prot} is given it is used to set the protection bits of
       the new directory.  The default is 0o755 (rwxr-xr-x: r/w for
       the user, readable for others).  Use 0o700 to make it
-      unreadable for others.
-
-      {prot} is applied for all parts of {name}.  Thus if you create
-      /tmp/foo/bar then /tmp/foo will be created with 0o700. Example: >vim
+      unreadable for others.  This is used for the newly created
+      directories.  Note: umask is applied to {prot} (on Unix).
+      Example: >vim
       	call mkdir($HOME .. "/tmp/foo/bar", "p", 0o700)
 
       <This function is not available in the |sandbox|.
@@ -7702,7 +7751,7 @@ M.funcs = {
 
     ]=],
     name = 'nextnonblank',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'nextnonblank({lnum})',
   },
@@ -7850,7 +7899,7 @@ M.funcs = {
 
     ]=],
     name = 'prevnonblank',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'prevnonblank({lnum})',
   },
@@ -8235,7 +8284,7 @@ M.funcs = {
            endif
          endfunc
          call prompt_setcallback(bufnr(), function('s:TextEntered'))
-
+      <
     ]=],
     name = 'prompt_setcallback',
     params = { { 'buf', 'integer|string' }, { 'expr', 'string|function' } },
@@ -9159,6 +9208,7 @@ M.funcs = {
       { 'timeout', 'integer' },
       { 'skip', 'string|function' },
     },
+    returns = 'integer',
     signature = 'search({pattern} [, {flags} [, {stopline} [, {timeout} [, {skip}]]]])',
   },
   searchcount = {
@@ -9725,7 +9775,7 @@ M.funcs = {
     args = { 1, 3 },
     base = 1,
     name = 'setcursorcharpos',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' }, { 'off', 'integer' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' }, { 'off', 'integer' } },
     signature = 'setcursorcharpos({lnum}, {col} [, {off}])',
   },
   setcursorcharpos__1 = {
@@ -9820,7 +9870,7 @@ M.funcs = {
 
     ]=],
     name = 'setline',
-    params = { { 'lnum', 'integer' }, { 'text', 'any' } },
+    params = { { 'lnum', 'integer|string' }, { 'text', 'any' } },
     signature = 'setline({lnum}, {text})',
   },
   setloclist = {
@@ -11181,7 +11231,9 @@ M.funcs = {
     tags = { 'E6100' },
     desc = [=[
       Returns |standard-path| locations of various default files and
-      directories.
+      directories. The locations are driven by |base-directories|
+      which you can configure via |$NVIM_APPNAME| or the `$XDG_…`
+      environment variables.
 
       {what}       Type    Description ~
       cache        String  Cache directory: arbitrary temporary
@@ -11206,6 +11258,20 @@ M.funcs = {
     params = { { 'what', "'cache'|'config'|'config_dirs'|'data'|'data_dirs'|'log'|'run'|'state'" } },
     returns = 'string|string[]',
     signature = 'stdpath({what})',
+  },
+  stdpath__1 = {
+    args = 1,
+    fast = true,
+    name = 'stdpath',
+    params = { { 'what', "'cache'|'config'|'data'|'log'|'run'|'state'" } },
+    returns = 'string',
+  },
+  stdpath__2 = {
+    args = 1,
+    fast = true,
+    name = 'stdpath',
+    params = { { 'what', "'config_dirs'|'data_dirs'" } },
+    returns = 'string[]',
   },
   str2float = {
     args = 1,
@@ -11873,7 +11939,7 @@ M.funcs = {
       <
     ]=],
     name = 'synID',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' }, { 'trans', '0|1' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' }, { 'trans', '0|1' } },
     returns = 'integer',
     signature = 'synID({lnum}, {col}, {trans})',
   },
@@ -11980,7 +12046,7 @@ M.funcs = {
       mechanisms |syntax-vs-match|.
     ]=],
     name = 'synconcealed',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' } },
     returns = '[integer, string, integer]',
     signature = 'synconcealed({lnum}, {col})',
   },
@@ -12006,7 +12072,7 @@ M.funcs = {
       valid positions.
     ]=],
     name = 'synstack',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' } },
     returns = 'integer[]',
     signature = 'synstack({lnum}, {col})',
   },

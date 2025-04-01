@@ -96,12 +96,19 @@ describe('API', function()
     assert_alive()
   end)
 
-  it('input is processed first when followed immediately by non-fast events', function()
+  it('input is processed first if followed immediately by non-fast events', function()
     api.nvim_set_current_line('ab')
     async_meths.nvim_input('x')
     async_meths.nvim_exec_lua('_G.res1 = vim.api.nvim_get_current_line()', {})
     async_meths.nvim_exec_lua('_G.res2 = vim.api.nvim_get_current_line()', {})
     eq({ 'b', 'b' }, exec_lua('return { _G.res1, _G.res2 }'))
+    -- Also test with getchar()
+    async_meths.nvim_command('let g:getchar = 1 | call getchar() | let g:getchar = 0')
+    eq(1, api.nvim_get_var('getchar'))
+    async_meths.nvim_input('x')
+    async_meths.nvim_exec_lua('_G.res1 = vim.g.getchar', {})
+    async_meths.nvim_exec_lua('_G.res2 = vim.g.getchar', {})
+    eq({ 0, 0 }, exec_lua('return { _G.res1, _G.res2 }'))
   end)
 
   it('does not set CA_COMMAND_BUSY #7254', function()
@@ -133,7 +140,7 @@ describe('API', function()
     it(':verbose set {option}?', function()
       api.nvim_exec2('set nowrap', { output = false })
       eq(
-        { output = 'nowrap\n\tLast set from anonymous :source' },
+        { output = 'nowrap\n\tLast set from anonymous :source line 1' },
         api.nvim_exec2('verbose set wrap?', { output = true })
       )
 
@@ -146,7 +153,7 @@ describe('API', function()
         { output = false }
       )
       eq(
-        { output = 'nowrap\n\tLast set from anonymous :source (script id 1)' },
+        { output = 'nowrap\n\tLast set from anonymous :source (script id 1) line 2' },
         api.nvim_exec2('verbose set wrap?', { output = true })
       )
     end)
@@ -289,16 +296,21 @@ describe('API', function()
       eq('ñxx', api.nvim_get_current_line())
     end)
 
+    it('can use :finish', function()
+      api.nvim_exec2('let g:var = 123\nfinish\nlet g:var = 456', {})
+      eq(123, api.nvim_get_var('var'))
+    end)
+
     it('execution error', function()
       eq(
-        'nvim_exec2(): Vim:E492: Not an editor command: bogus_command',
+        'nvim_exec2(), line 1: Vim:E492: Not an editor command: bogus_command',
         pcall_err(request, 'nvim_exec2', 'bogus_command', {})
       )
       eq('', api.nvim_eval('v:errmsg')) -- v:errmsg was not updated.
       eq('', eval('v:exception'))
 
       eq(
-        'nvim_exec2(): Vim(buffer):E86: Buffer 23487 does not exist',
+        'nvim_exec2(), line 1: Vim(buffer):E86: Buffer 23487 does not exist',
         pcall_err(request, 'nvim_exec2', 'buffer 23487', {})
       )
       eq('', eval('v:errmsg')) -- v:errmsg was not updated.
@@ -331,16 +343,27 @@ describe('API', function()
       write_file(sourcing_fname, 'call nvim_exec2("source ' .. fname .. '", {"output": v:false})\n')
       api.nvim_exec2('set verbose=2', { output = false })
       local traceback_output = dedent([[
-        line 0: sourcing "%s"
-        line 0: sourcing "%s"
+        sourcing "nvim_exec2()"
+        line 1: sourcing "nvim_exec2() called at nvim_exec2():1"
+        line 1: sourcing "%s"
+        line 1: sourcing "nvim_exec2() called at %s:1"
+        line 1: sourcing "%s"
         hello
         finished sourcing %s
         continuing in nvim_exec2() called at %s:1
+        finished sourcing nvim_exec2() called at %s:1
+        continuing in %s
         finished sourcing %s
-        continuing in nvim_exec2() called at nvim_exec2():0]]):format(
+        continuing in nvim_exec2() called at nvim_exec2():1
+        finished sourcing nvim_exec2() called at nvim_exec2():1
+        continuing in nvim_exec2()
+        finished sourcing nvim_exec2()]]):format(
+        sourcing_fname,
         sourcing_fname,
         fname,
         fname,
+        sourcing_fname,
+        sourcing_fname,
         sourcing_fname,
         sourcing_fname
       )
@@ -781,18 +804,6 @@ describe('API', function()
     end)
   end)
 
-  describe('nvim_notify', function()
-    it('can notify a info message', function()
-      api.nvim_notify('hello world', 2, {})
-    end)
-
-    it('can be overridden', function()
-      command('lua vim.notify = function(...) return 42 end')
-      eq(42, api.nvim_exec_lua("return vim.notify('Hello world')", {}))
-      api.nvim_notify('hello world', 4, {})
-    end)
-  end)
-
   describe('nvim_input', function()
     it('Vimscript error: does NOT fail, updates v:errmsg', function()
       local status, _ = pcall(api.nvim_input, ':call bogus_fn()<CR>')
@@ -841,6 +852,39 @@ describe('API', function()
           ]])
         feed('u') -- Undo.
         expect(expected1)
+      end)
+      it("stream: multiple chunks sets correct '[ mark", function()
+        -- Pastes single chunk
+        api.nvim_paste('aaaaaa\n', true, -1)
+        eq({ 0, 1, 1, 0 }, fn.getpos("'["))
+        -- Pastes an empty chunk
+        api.nvim_paste('', true, -1)
+        eq({ 0, 2, 1, 0 }, fn.getpos("'["))
+        -- Pastes some chunks on empty line
+        api.nvim_paste('1/chunk 1 (start)\n', true, 1)
+        eq({ 0, 2, 1, 0 }, fn.getpos("'["))
+        api.nvim_paste('1/chunk 2\n', true, 2)
+        eq({ 0, 2, 1, 0 }, fn.getpos("'["))
+        api.nvim_paste('1/chunk 3 (end)\n', true, 3)
+        eq({ 0, 2, 1, 0 }, fn.getpos("'["))
+        -- Pastes some chunks on non-empty line
+        api.nvim_paste('aaaaaa', true, -1)
+        eq({ 0, 5, 1, 0 }, fn.getpos("'["))
+        api.nvim_paste('bbbbbb', true, 1)
+        eq({ 0, 5, 7, 0 }, fn.getpos("'["))
+        api.nvim_paste('cccccc', true, 2)
+        eq({ 0, 5, 7, 0 }, fn.getpos("'["))
+        api.nvim_paste('dddddd\n', true, 3)
+        eq({ 0, 5, 7, 0 }, fn.getpos("'["))
+        -- Pastes some empty chunks between non-empty chunks
+        api.nvim_paste('', true, 1)
+        eq({ 0, 5, 7, 0 }, fn.getpos("'["))
+        api.nvim_paste('a', true, 2)
+        eq({ 0, 6, 1, 0 }, fn.getpos("'["))
+        api.nvim_paste('', true, 2)
+        eq({ 0, 6, 1, 0 }, fn.getpos("'["))
+        api.nvim_paste('a', true, 3)
+        eq({ 0, 6, 1, 0 }, fn.getpos("'["))
       end)
       it('stream: Insert mode', function()
         -- If nvim_paste() calls :undojoin without making any changes, this makes it an error.
@@ -3156,14 +3200,23 @@ describe('API', function()
 
   describe('nvim_create_namespace', function()
     it('works', function()
-      eq({}, api.nvim_get_namespaces())
-      eq(1, api.nvim_create_namespace('ns-1'))
-      eq(2, api.nvim_create_namespace('ns-2'))
-      eq(1, api.nvim_create_namespace('ns-1'))
-      eq({ ['ns-1'] = 1, ['ns-2'] = 2 }, api.nvim_get_namespaces())
-      eq(3, api.nvim_create_namespace(''))
-      eq(4, api.nvim_create_namespace(''))
-      eq({ ['ns-1'] = 1, ['ns-2'] = 2 }, api.nvim_get_namespaces())
+      local orig = api.nvim_get_namespaces()
+      local base = vim.iter(orig):fold(0, function(acc, _, v)
+        return math.max(acc, v)
+      end)
+      eq(base + 1, api.nvim_create_namespace('ns-1'))
+      eq(base + 2, api.nvim_create_namespace('ns-2'))
+      eq(base + 1, api.nvim_create_namespace('ns-1'))
+
+      local expected = vim.tbl_extend('error', orig, {
+        ['ns-1'] = base + 1,
+        ['ns-2'] = base + 2,
+      })
+
+      eq(expected, api.nvim_get_namespaces())
+      eq(base + 3, api.nvim_create_namespace(''))
+      eq(base + 4, api.nvim_create_namespace(''))
+      eq(expected, api.nvim_get_namespaces())
     end)
   end)
 
@@ -3680,6 +3733,30 @@ describe('API', function()
       async_meths.nvim_echo({ { 'msg\nmsg' }, { 'msg' } }, false, {})
       eq('', exec_capture('messages'))
     end)
+
+    it('can print error message', function()
+      async_meths.nvim_echo({ { 'Error\nMessage' } }, false, { err = true })
+      screen:expect([[
+                                                |
+        {1:~                                       }|*3
+        {3:                                        }|
+        {9:Error}                                   |
+        {9:Message}                                 |
+        {6:Press ENTER or type command to continue}^ |
+      ]])
+      feed(':messages<CR>')
+      screen:expect([[
+        ^                                        |
+        {1:~                                       }|*6
+                                                |
+      ]])
+      async_meths.nvim_echo({ { 'Error' }, { 'Message', 'Special' } }, false, { err = true })
+      screen:expect([[
+        ^                                        |
+        {1:~                                       }|*6
+        {9:Error}{16:Message}                            |
+      ]])
+    end)
   end)
 
   describe('nvim_open_term', function()
@@ -3981,8 +4058,8 @@ describe('API', function()
             str = 'TextWithWarningHighlightTextWithUserHighlight',
             width = 45,
             highlights = {
-              { start = 0, group = 'WarningMsg' },
-              { start = 24, group = 'User1' },
+              { start = 0, group = 'WarningMsg', groups = { 'StatusLine', 'WarningMsg' } },
+              { start = 24, group = 'User1', groups = { 'StatusLine', 'User1' } },
             },
           },
           api.nvim_eval_statusline(
@@ -3997,7 +4074,7 @@ describe('API', function()
           str = 'TextWithNoHighlight',
           width = 19,
           highlights = {
-            { start = 0, group = 'StatusLine' },
+            { start = 0, group = 'StatusLine', groups = { 'StatusLine' } },
           },
         }, api.nvim_eval_statusline('TextWithNoHighlight', { highlights = true }))
       end)
@@ -4009,8 +4086,8 @@ describe('API', function()
             str = 'TextWithNoHighlightTextWithWarningHighlight',
             width = 43,
             highlights = {
-              { start = 0, group = 'StatusLineNC' },
-              { start = 19, group = 'WarningMsg' },
+              { start = 0, group = 'StatusLineNC', groups = { 'StatusLineNC' } },
+              { start = 19, group = 'WarningMsg', groups = { 'StatusLineNC', 'WarningMsg' } },
             },
           },
           api.nvim_eval_statusline(
@@ -4026,8 +4103,8 @@ describe('API', function()
             str = 'TextWithNoHighlightTextWithWarningHighlight',
             width = 43,
             highlights = {
-              { start = 0, group = 'TabLineFill' },
-              { start = 19, group = 'WarningMsg' },
+              { start = 0, group = 'TabLineFill', groups = { 'TabLineFill' } },
+              { start = 19, group = 'WarningMsg', groups = { 'TabLineFill', 'WarningMsg' } },
             },
           },
           api.nvim_eval_statusline(
@@ -4043,8 +4120,8 @@ describe('API', function()
             str = 'TextWithNoHighlightTextWithWarningHighlight',
             width = 43,
             highlights = {
-              { start = 0, group = 'WinBar' },
-              { start = 19, group = 'WarningMsg' },
+              { start = 0, group = 'WinBar', groups = { 'WinBar' } },
+              { start = 19, group = 'WarningMsg', groups = { 'WinBar', 'WarningMsg' } },
             },
           },
           api.nvim_eval_statusline(
@@ -4071,11 +4148,11 @@ describe('API', function()
           str = '││bbaa 4 ',
           width = 9,
           highlights = {
-            { group = 'CursorLineFold', start = 0 },
-            { group = 'Normal', start = 6 },
-            { group = 'ErrorMsg', start = 6 },
-            { group = 'IncSearch', start = 8 },
-            { group = 'Normal', start = 10 },
+            { group = 'CursorLineFold', start = 0, groups = { 'CursorLineFold' } },
+            { group = 'Normal', start = 6, groups = { 'Normal' } },
+            { group = 'ErrorMsg', start = 6, groups = { 'CursorLineSign', 'ErrorMsg' } },
+            { group = 'IncSearch', start = 8, groups = { 'CursorLineSign', 'IncSearch' } },
+            { group = 'Normal', start = 10, groups = { 'Normal' } },
           },
         }, api.nvim_eval_statusline(
           '%C%s%=%l ',
@@ -4086,8 +4163,8 @@ describe('API', function()
             str = '       3 ',
             width = 9,
             highlights = {
-              { group = 'LineNr', start = 0 },
-              { group = 'ErrorMsg', start = 8 },
+              { group = 'LineNr', start = 0, groups = { 'LineNr' } },
+              { group = 'ErrorMsg', start = 8, groups = { 'LineNr', 'ErrorMsg' } },
             },
           },
           api.nvim_eval_statusline('%l%#ErrorMsg# ', { use_statuscol_lnum = 3, highlights = true })

@@ -119,7 +119,7 @@ describe('vim.filetype', function()
 
   it('works with contents #22180', function()
     eq(
-      'bash',
+      'sh',
       exec_lua(function()
         -- Needs to be set so detect#sh doesn't fail
         vim.g.ft_ignore_pat = '\\.\\(Z\\|gz\\|bz2\\|zip\\|tgz\\)$'
@@ -172,6 +172,23 @@ describe('vim.filetype', function()
     end)
 
     eq(buf, api.nvim_get_current_buf())
+  end)
+
+  it('matches full paths', function()
+    mkdir('Xfiletype')
+    command('lcd Xfiletype')
+    eq(
+      'Xfiletype',
+      exec_lua(function()
+        vim.filetype.add({
+          pattern = {
+            ['.*/Xfiletype/Xfilename'] = 'Xfiletype',
+          },
+        })
+        return vim.filetype.match({ filename = 'Xfilename' })
+      end)
+    )
+    rmdir('Xfiletype')
   end)
 end)
 

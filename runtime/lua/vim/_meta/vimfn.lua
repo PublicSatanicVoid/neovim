@@ -85,7 +85,7 @@ function vim.fn.api_info() end
 ---   let failed = append(0, ["Chapter 1", "the beginning"])
 --- <
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param text string|string[]
 --- @return 0|1
 function vim.fn.append(lnum, text) end
@@ -899,14 +899,15 @@ function vim.fn.charidx(string, idx, countcc, utf16) end
 --- @return string
 function vim.fn.chdir(dir) end
 
---- Get the amount of indent for line {lnum} according the C
---- indenting rules, as with 'cindent'.
+--- Get the amount of indent for line {lnum} according the
+--- |C-indenting| rules, as with 'cindent'.
 --- The indent is counted in spaces, the value of 'tabstop' is
 --- relevant.  {lnum} is used just like in |getline()|.
 --- When {lnum} is invalid -1 is returned.
---- See |C-indenting|.
 ---
---- @param lnum integer
+--- To get or set indent of lines in a string, see |vim.text.indent()|.
+---
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.cindent(lnum) end
 
@@ -1037,7 +1038,8 @@ function vim.fn.complete_check() end
 ---     typed text only, or the last completion after
 ---     no item is selected when using the <Up> or
 ---     <Down> keys)
----    inserted  Inserted string. [NOT IMPLEMENTED YET]
+---    completed  Return a dictionary containing the entries of
+---     the currently selected index item.
 ---    preview_winid     Info floating preview window id.
 ---    preview_bufnr     Info floating preview buffer id.
 ---
@@ -1242,7 +1244,7 @@ function vim.fn.ctxset(context, index) end
 --- @return any
 function vim.fn.ctxsize() end
 
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col? integer
 --- @param off? integer
 --- @return any
@@ -1439,7 +1441,7 @@ function vim.fn.did_filetype() end
 --- line, "'m" mark m, etc.
 --- Returns 0 if the current window is not in diff mode.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.diff_filler(lnum) end
 
@@ -1453,7 +1455,7 @@ function vim.fn.diff_filler(lnum) end
 --- The highlight ID can be used with |synIDattr()| to obtain
 --- syntax information about the highlighting.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col integer
 --- @return any
 function vim.fn.diff_hlID(lnum, col) end
@@ -1927,7 +1929,8 @@ function vim.fn.expandcmd(string, options) end
 --- When {expr3} is omitted then "force" is assumed.
 ---
 --- {expr1} is changed when {expr2} is not empty.  If necessary
---- make a copy of {expr1} first.
+--- make a copy of {expr1} first or use |extendnew()| to return a
+--- new List/Dictionary.
 --- {expr2} remains unchanged.
 --- When {expr1} is locked and {expr2} is not empty the operation
 --- fails.
@@ -2279,7 +2282,7 @@ function vim.fn.fnamemodify(fname, mods) end
 --- {lnum} is used like with |getline()|.  Thus "." is the current
 --- line, "'m" mark m, etc.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.foldclosed(lnum) end
 
@@ -2289,7 +2292,7 @@ function vim.fn.foldclosed(lnum) end
 --- {lnum} is used like with |getline()|.  Thus "." is the current
 --- line, "'m" mark m, etc.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.foldclosedend(lnum) end
 
@@ -2304,7 +2307,7 @@ function vim.fn.foldclosedend(lnum) end
 --- {lnum} is used like with |getline()|.  Thus "." is the current
 --- line, "'m" mark m, etc.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.foldlevel(lnum) end
 
@@ -2335,7 +2338,7 @@ function vim.fn.foldtext() end
 --- line, "'m" mark m, etc.
 --- Useful when exporting folded text, e.g., to HTML.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return string
 function vim.fn.foldtextresult(lnum) end
 
@@ -2747,12 +2750,14 @@ function vim.fn.getcellwidths() end
 function vim.fn.getchangelist(buf) end
 
 --- Get a single character from the user or input stream.
---- If {expr} is omitted, wait until a character is available.
+--- If {expr} is omitted or is -1, wait until a character is
+---   available.
 --- If {expr} is 0, only get a character when one is available.
 ---   Return zero otherwise.
 --- If {expr} is 1, only check if a character is available, it is
 ---   not consumed.  Return zero if no character available.
---- If you prefer always getting a string use |getcharstr()|.
+--- If you prefer always getting a string use |getcharstr()|, or
+--- specify |FALSE| as "number" in {opts}.
 ---
 --- Without {expr} and when {expr} is 0 a whole character or
 --- special key is returned.  If it is a single character, the
@@ -2762,7 +2767,8 @@ function vim.fn.getchangelist(buf) end
 --- starting with 0x80 (decimal: 128).  This is the same value as
 --- the String "\<Key>", e.g., "\<Left>".  The returned value is
 --- also a String when a modifier (shift, control, alt) was used
---- that is not included in the character.
+--- that is not included in the character.  |keytrans()| can also
+--- be used to convert a returned String into a readable form.
 ---
 --- When {expr} is 0 and Esc is typed, there will be a short delay
 --- while Vim waits to see if this is the start of an escape
@@ -2773,6 +2779,32 @@ function vim.fn.getchangelist(buf) end
 --- Use nr2char() to convert it to a String.
 ---
 --- Use getcharmod() to obtain any additional modifiers.
+---
+--- The optional argument {opts} is a Dict and supports the
+--- following items:
+---
+---   cursor    A String specifying cursor behavior
+---       when waiting for a character.
+---       "hide": hide the cursor.
+---       "keep": keep current cursor unchanged.
+---       "msg": move cursor to message area.
+---       (default: automagically decide
+---       between "keep" and "msg")
+---
+---   number    If |TRUE|, return a Number when getting
+---       a single character.
+---       If |FALSE|, the return value is always
+---       converted to a String, and an empty
+---       String (instead of 0) is returned when
+---       no character is available.
+---       (default: |TRUE|)
+---
+---   simplify  If |TRUE|, include modifiers in the
+---       character if possible.  E.g., return
+---       the same value for CTRL-I and <Tab>.
+---       If |FALSE|, don't include modifiers in
+---       the character.
+---       (default: |TRUE|)
 ---
 --- When the user clicks a mouse button, the mouse event will be
 --- returned.  The position can then be found in |v:mouse_col|,
@@ -2810,9 +2842,10 @@ function vim.fn.getchangelist(buf) end
 ---   endfunction
 --- <
 ---
---- @param expr? 0|1
---- @return integer
-function vim.fn.getchar(expr) end
+--- @param expr? -1|0|1
+--- @param opts? table
+--- @return integer|string
+function vim.fn.getchar(expr, opts) end
 
 --- The result is a Number which is the state of the modifiers for
 --- the last obtained character with getchar() or in another way.
@@ -2871,20 +2904,13 @@ function vim.fn.getcharpos(expr) end
 --- @return table
 function vim.fn.getcharsearch() end
 
---- Get a single character from the user or input stream as a
---- string.
---- If {expr} is omitted, wait until a character is available.
---- If {expr} is 0 or false, only get a character when one is
----   available.  Return an empty string otherwise.
---- If {expr} is 1 or true, only check if a character is
----   available, it is not consumed.  Return an empty string
----   if no character is available.
---- Otherwise this works like |getchar()|, except that a number
---- result is converted to a string.
+--- The same as |getchar()|, except that this always returns a
+--- String, and "number" isn't allowed in {opts}.
 ---
---- @param expr? 0|1
+--- @param expr? -1|0|1
+--- @param opts? table
 --- @return string
-function vim.fn.getcharstr(expr) end
+function vim.fn.getcharstr(expr, opts) end
 
 --- Return completion pattern of the current command-line.
 --- Only works when the command line is being edited, thus
@@ -3258,7 +3284,7 @@ function vim.fn.getjumplist(winnr, tabnr) end
 --- @return string
 function vim.fn.getline(lnum, end_) end
 
---- @param lnum integer
+--- @param lnum integer|string
 --- @param end_ true|number|string|table
 --- @return string|string[]
 function vim.fn.getline(lnum, end_) end
@@ -3770,6 +3796,20 @@ function vim.fn.getregtype(regname) end
 --- @return vim.fn.getscriptinfo.ret[]
 function vim.fn.getscriptinfo(opts) end
 
+--- Returns the current stack trace of Vim scripts.
+--- Stack trace is a |List|, of which each item is a |Dictionary|
+--- with the following items:
+---     funcref  The funcref if the stack is at a function,
+---     otherwise this item is omitted.
+---     event  The string of the event description if the
+---     stack is at an autocmd event, otherwise this
+---     item is omitted.
+---     lnum  The line number in the script on the stack.
+---     filepath  The file path of the script on the stack.
+---
+--- @return table[]
+function vim.fn.getstacktrace() end
+
 --- If {tabnr} is not specified, then information about all the
 --- tab pages is returned as a |List|. Each List item is a
 --- |Dictionary|.  Otherwise, {tabnr} specifies the tab page
@@ -4110,6 +4150,7 @@ function vim.fn.globpath(path, expr, nosuf, list, allinks) end
 ---   fname_case  Case in file names matters (for Darwin and MS-Windows
 ---       this is not present).
 ---   gui_running  Nvim has a GUI.
+---   hurd    GNU/Hurd system.
 ---   iconv    Can use |iconv()| for conversion.
 ---   linux    Linux system.
 ---   mac    MacOS system.
@@ -4389,6 +4430,8 @@ function vim.fn.id(expr) end
 --- of 'tabstop' is relevant.  {lnum} is used just like in
 --- |getline()|.
 --- When {lnum} is invalid -1 is returned.
+---
+--- To get or set indent of lines in a string, see |vim.text.indent()|.
 ---
 --- @param lnum integer|string
 --- @return integer
@@ -5127,7 +5170,7 @@ function vim.fn.line(expr, winid) end
 --- |getline()|.  When {lnum} is invalid -1 is returned.
 --- Also see |byte2line()|, |go| and |:goto|.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.line2byte(lnum) end
 
@@ -5137,7 +5180,7 @@ function vim.fn.line2byte(lnum) end
 --- relevant.  {lnum} is used just like in |getline()|.
 --- When {lnum} is invalid, -1 is returned.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.lispindent(lnum) end
 
@@ -5295,9 +5338,8 @@ function vim.fn.map(expr1, expr2) end
 --- When {abbr} is there and it is |TRUE| use abbreviations
 --- instead of mappings.
 ---
---- When {dict} is there and it is |TRUE| return a dictionary
---- containing all the information of the mapping with the
---- following items:      *mapping-dict*
+--- When {dict} is |TRUE|, return a dictionary describing the
+--- mapping, with these items:    *mapping-dict*
 ---   "lhs"       The {lhs} of the mapping as it would be typed
 ---   "lhsraw"   The {lhs} of the mapping as raw bytes
 ---   "lhsrawalt" The {lhs} of the mapping as raw bytes, alternate
@@ -5349,7 +5391,7 @@ function vim.fn.maparg(name, mode, abbr, dict) end
 --- @param mode string
 --- @param abbr boolean
 --- @param dict true
---- @return string|table<string,any>
+--- @return table<string,any>
 function vim.fn.maparg(name, mode, abbr, dict) end
 
 --- Check if there is a mapping that matches with {name} in mode
@@ -5437,7 +5479,7 @@ function vim.fn.mapnew(expr1, expr2) end
 
 --- @param mode string
 --- @param abbr? boolean
---- @param dict? boolean
+--- @param dict? table<string,any>
 --- @return any
 function vim.fn.mapset(mode, abbr, dict) end
 
@@ -5477,7 +5519,7 @@ function vim.fn.mapset(mode, abbr, dict) end
 ---   endfor
 --- <
 ---
---- @param dict boolean
+--- @param dict table<string,any>
 --- @return any
 function vim.fn.mapset(dict) end
 
@@ -5773,6 +5815,9 @@ function vim.fn.matchend(expr, pat, start, count) end
 ---     given sequence.
 ---     limit  Maximum number of matches in {list} to be
 ---     returned.  Zero means no limit.
+---     camelcase  Use enhanced camel case scoring making results
+---     better suited for completion related to
+---     programming languages.  Defaults to v:true.
 ---
 --- If {list} is a list of dictionaries, then the optional {dict}
 --- argument supports the following additional items:
@@ -5826,7 +5871,7 @@ function vim.fn.matchend(expr, pat, start, count) end
 ---
 --- @param list any[]
 --- @param str string
---- @param dict? string
+--- @param dict? table
 --- @return any
 function vim.fn.matchfuzzy(list, str, dict) end
 
@@ -5853,7 +5898,7 @@ function vim.fn.matchfuzzy(list, str, dict) end
 ---
 --- @param list any[]
 --- @param str string
---- @param dict? string
+--- @param dict? table
 --- @return any
 function vim.fn.matchfuzzypos(list, str, dict) end
 
@@ -6131,10 +6176,9 @@ function vim.fn.min(expr) end
 --- If {prot} is given it is used to set the protection bits of
 --- the new directory.  The default is 0o755 (rwxr-xr-x: r/w for
 --- the user, readable for others).  Use 0o700 to make it
---- unreadable for others.
----
---- {prot} is applied for all parts of {name}.  Thus if you create
---- /tmp/foo/bar then /tmp/foo will be created with 0o700. Example: >vim
+--- unreadable for others.  This is used for the newly created
+--- directories.  Note: umask is applied to {prot} (on Unix).
+--- Example: >vim
 ---   call mkdir($HOME .. "/tmp/foo/bar", "p", 0o700)
 ---
 --- <This function is not available in the |sandbox|.
@@ -6311,7 +6355,7 @@ function vim.fn.msgpackparse(data) end
 --- {lnum} is used like with |getline()|.
 --- See also |prevnonblank()|.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.nextnonblank(lnum) end
 
@@ -6410,7 +6454,7 @@ function vim.fn.pow(x, y) end
 --- {lnum} is used like with |getline()|.
 --- Also see |nextnonblank()|.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.prevnonblank(lnum) end
 
@@ -6781,6 +6825,7 @@ function vim.fn.prompt_getprompt(buf) end
 ---      endif
 ---    endfunc
 ---    call prompt_setcallback(bufnr(), function('s:TextEntered'))
+--- <
 ---
 --- @param buf integer|string
 --- @param expr string|function
@@ -7523,7 +7568,7 @@ function vim.fn.screenstring(row, col) end
 --- @param stopline? integer
 --- @param timeout? integer
 --- @param skip? string|function
---- @return any
+--- @return integer
 function vim.fn.search(pattern, flags, stopline, timeout, skip) end
 
 --- Get or update the last search count, like what is displayed
@@ -8018,7 +8063,7 @@ function vim.fn.setcmdline(str, pos) end
 --- @return any
 function vim.fn.setcmdpos(pos) end
 
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col? integer
 --- @param off? integer
 --- @return any
@@ -8097,7 +8142,7 @@ function vim.fn.setfperm(fname, mode) end
 ---
 --- <Note: The '[ and '] marks are not set.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param text any
 --- @return any
 function vim.fn.setline(lnum, text) end
@@ -9288,7 +9333,9 @@ function vim.fn.state(what) end
 function vim.fn.stdioopen(opts) end
 
 --- Returns |standard-path| locations of various default files and
---- directories.
+--- directories. The locations are driven by |base-directories|
+--- which you can configure via |$NVIM_APPNAME| or the `$XDG_…`
+--- environment variables.
 ---
 --- {what}       Type    Description ~
 --- cache        String  Cache directory: arbitrary temporary
@@ -9310,6 +9357,14 @@ function vim.fn.stdioopen(opts) end
 ---
 --- @param what 'cache'|'config'|'config_dirs'|'data'|'data_dirs'|'log'|'run'|'state'
 --- @return string|string[]
+function vim.fn.stdpath(what) end
+
+--- @param what 'cache'|'config'|'data'|'log'|'run'|'state'
+--- @return string
+function vim.fn.stdpath(what) end
+
+--- @param what 'config_dirs'|'data_dirs'
+--- @return string[]
 function vim.fn.stdpath(what) end
 
 --- Convert String {string} to a Float.  This mostly works the
@@ -9843,7 +9898,7 @@ function vim.fn.swapname(buf) end
 ---   echo synIDattr(synID(line("."), col("."), 1), "name")
 --- <
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col integer
 --- @param trans 0|1
 --- @return integer
@@ -9939,7 +9994,7 @@ function vim.fn.synIDtrans(synID) end
 --- since syntax and matching highlighting are two different
 --- mechanisms |syntax-vs-match|.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col integer
 --- @return [integer, string, integer]
 function vim.fn.synconcealed(lnum, col) end
@@ -9962,7 +10017,7 @@ function vim.fn.synconcealed(lnum, col) end
 --- character in a line and the first column in an empty line are
 --- valid positions.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col integer
 --- @return integer[]
 function vim.fn.synstack(lnum, col) end

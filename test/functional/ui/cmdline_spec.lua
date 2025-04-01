@@ -858,11 +858,78 @@ local function test_cmdline(linegrid)
       cmdline = {
         {
           content = { { '' } },
-          hl_id = 237,
+          hl_id = 243,
           pos = 0,
           prompt = 'Prompt:',
         },
       },
+    })
+  end)
+
+  it('works with conditionals', function()
+    local s1 = [[
+      ^                         |
+      {1:~                        }|*3
+                               |
+    ]]
+    screen:expect(s1)
+    feed(':if 1<CR>')
+    screen:expect({
+      grid = s1,
+      cmdline = {
+        {
+          content = { { '' } },
+          firstc = ':',
+          indent = 2,
+          pos = 0,
+        },
+      },
+      cmdline_block = { { { 'if 1' } } },
+    })
+    feed('let x = 1<CR>')
+    screen:expect({
+      grid = s1,
+      cmdline = {
+        {
+          content = { { '' } },
+          firstc = ':',
+          indent = 2,
+          pos = 0,
+        },
+      },
+      cmdline_block = { { { 'if 1' } }, { { '  let x = 1' } } },
+    })
+    feed('<CR>')
+    eq('let x = 1', eval('@:'))
+    screen:expect({
+      grid = s1,
+      cmdline = {
+        {
+          content = { { '' } },
+          firstc = ':',
+          indent = 2,
+          pos = 0,
+        },
+      },
+      cmdline_block = { { { 'if 1' } }, { { '  let x = 1' } }, { { '  ' } } },
+    })
+    feed('endif')
+    screen:expect({
+      grid = s1,
+      cmdline = {
+        {
+          content = { { 'endif' } },
+          firstc = ':',
+          indent = 2,
+          pos = 5,
+        },
+      },
+      cmdline_block = { { { 'if 1' } }, { { '  let x = 1' } }, { { '  ' } } },
+    })
+    feed('<CR>')
+    screen:expect({
+      grid = s1,
+      cmdline = { { abort = false } },
     })
   end)
 end
@@ -1037,6 +1104,36 @@ describe('cmdline redraw', function()
       kcor s'tel/              |
     ]],
     }
+  end)
+
+  it('silent prompt', function()
+    command([[nmap <silent> T :call confirm("Save changes?", "&Yes\n&No\n&Cancel")<CR>]])
+    feed('T')
+    screen:expect([[
+                               |
+      {3:                         }|
+                               |
+      {6:Save changes?}            |
+      {6:[Y]es, (N)o, (C)ancel: }^  |
+    ]])
+  end)
+
+  it('substitute confirm prompt does not scroll', function()
+    screen:try_resize(75, screen._height)
+    command('call setline(1, "foo")')
+    command('set report=0')
+    feed(':%s/foo/bar/c<CR>')
+    screen:expect([[
+      {2:foo}                                                                        |
+      {1:~                                                                          }|*3
+      {6:replace with bar? (y)es/(n)o/(a)ll/(q)uit/(l)ast/scroll up(^E)/down(^Y)}^    |
+    ]])
+    feed('y')
+    screen:expect([[
+      ^bar                                                                        |
+      {1:~                                                                          }|*3
+      1 substitution on 1 line                                                   |
+    ]])
   end)
 end)
 
@@ -1268,6 +1365,12 @@ describe('cmdline height', function()
     -- Available lines changed, so closing cmdwin should skip restoring window sizes, leaving the
     -- cmdheight unchanged.
     eq(1, eval('&cmdheight'))
+  end)
+
+  it('not increased to 0 from 1 with wincmd _', function()
+    command('set cmdheight=0 laststatus=0')
+    command('wincmd _')
+    eq(0, eval('&cmdheight'))
   end)
 end)
 

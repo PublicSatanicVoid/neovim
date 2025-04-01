@@ -88,6 +88,7 @@ func s:GetFilenameChecks() abort
     \ 'abap': ['file.abap'],
     \ 'abc': ['file.abc'],
     \ 'abel': ['file.abl'],
+    \ 'abnf': ['file.abnf'],
     \ 'acedb': ['file.wrm'],
     \ 'ada': ['file.adb', 'file.ads', 'file.ada', 'file.gpr'],
     \ 'ahdl': ['file.tdf'],
@@ -128,9 +129,6 @@ func s:GetFilenameChecks() abort
     \ 'ave': ['file.ave'],
     \ 'awk': ['file.awk', 'file.gawk'],
     \ 'b': ['file.mch', 'file.ref', 'file.imp'],
-    \ 'bash': ['.bashrc', '.bash_profile', '.bash-profile', '.bash_logout', '.bash-logout', '.bash_aliases',
-    \          '.bash-aliases', '.bash_history', '.bash-history', '/tmp/bash-fc-3Ozjlw', '/tmp/bash-fc.3Ozjlw',
-    \          'PKGBUILD', 'file.bash', 'file.bats',  'file.cygport'],
     \ 'basic': ['file.bas', 'file.bi', 'file.bm'],
     \ 'bass': ['file.bass'],
     \ 'bc': ['file.bc'],
@@ -308,7 +306,7 @@ func s:GetFilenameChecks() abort
     \ 'gitattributes': ['file.git/info/attributes', '.gitattributes', '/.config/git/attributes', '/etc/gitattributes', '/usr/local/etc/gitattributes', 'some.git/info/attributes'] + s:WhenConfigHome('$XDG_CONFIG_HOME/git/attributes'),
     \ 'gitcommit': ['COMMIT_EDITMSG', 'MERGE_MSG', 'TAG_EDITMSG', 'NOTES_EDITMSG', 'EDIT_DESCRIPTION'],
     \ 'gitconfig': ['file.git/config', 'file.git/config.worktree', 'file.git/worktrees/x/config.worktree', '.gitconfig', '.gitmodules', 'file.git/modules//config', '/.config/git/config', '/etc/gitconfig', '/usr/local/etc/gitconfig', '/etc/gitconfig.d/file', 'any/etc/gitconfig.d/file', '/.gitconfig.d/file', 'any/.config/git/config', 'any/.gitconfig.d/file', 'some.git/config', 'some.git/modules/any/config'] + s:WhenConfigHome('$XDG_CONFIG_HOME/git/config'),
-    \ 'gitignore': ['file.git/info/exclude', '.gitignore', '/.config/git/ignore', 'some.git/info/exclude'] + s:WhenConfigHome('$XDG_CONFIG_HOME/git/ignore') + ['.prettierignore'],
+    \ 'gitignore': ['file.git/info/exclude', '.gitignore', '/.config/git/ignore', 'some.git/info/exclude'] + s:WhenConfigHome('$XDG_CONFIG_HOME/git/ignore') + ['.prettierignore', '.fdignore', '/.config/fd/ignore', '.ignore', '.rgignore', '.dockerignore', '.containerignore', '.npmignore', '.vscodeignore'],
     \ 'gitolite': ['gitolite.conf', '/gitolite-admin/conf/file', 'any/gitolite-admin/conf/file'],
     \ 'gitrebase': ['git-rebase-todo'],
     \ 'gitsendemail': ['.gitsendemail.msg.xxxxxx'],
@@ -393,9 +391,9 @@ func s:GetFilenameChecks() abort
     \ 'jovial': ['file.jov', 'file.j73', 'file.jovial'],
     \ 'jproperties': ['file.properties', 'file.properties_xx', 'file.properties_xx_xx', 'some.properties_xx_xx_file', 'org.eclipse.xyz.prefs'],
     \ 'jq': ['file.jq'],
-    \ 'json': ['file.json', 'file.jsonp', 'file.json-patch', 'file.geojson', 'file.webmanifest', 'Pipfile.lock', 'file.ipynb', 'file.jupyterlab-settings', '.prettierrc', '.firebaserc', '.stylelintrc', '.lintstagedrc', 'file.slnf', 'file.sublime-project', 'file.sublime-settings', 'file.sublime-workspace', 'file.bd', 'file.bda', 'file.xci', 'flake.lock', 'pack.mcmeta', 'deno.lock'],
+    \ 'json': ['file.json', 'file.jsonp', 'file.json-patch', 'file.geojson', 'file.webmanifest', 'Pipfile.lock', 'file.ipynb', 'file.jupyterlab-settings', '.prettierrc', '.firebaserc', '.stylelintrc', '.lintstagedrc', 'file.slnf', 'file.sublime-project', 'file.sublime-settings', 'file.sublime-workspace', 'file.bd', 'file.bda', 'file.xci', 'flake.lock', 'pack.mcmeta', 'deno.lock', '.swcrc'],
     \ 'json5': ['file.json5'],
-    \ 'jsonc': ['file.jsonc', '.babelrc', '.eslintrc', '.jsfmtrc', '.jshintrc', '.jscsrc', '.vsconfig', '.hintrc', '.swrc', 'jsconfig.json', 'tsconfig.json', 'tsconfig.test.json', 'tsconfig-test.json', '.luaurc', 'bun.lock'],
+    \ 'jsonc': ['file.jsonc', '.babelrc', '.eslintrc', '.jsfmtrc', '.jshintrc', '.jscsrc', '.vsconfig', '.hintrc', '.swrc', 'jsconfig.json', 'tsconfig.json', 'tsconfig.test.json', 'tsconfig-test.json', '.luaurc', 'bun.lock', expand("$HOME/.config/VSCodium/User/settings.json")],
     \ 'jsonl': ['file.jsonl'],
     \ 'jsonnet': ['file.jsonnet', 'file.libsonnet'],
     \ 'jsp': ['file.jsp'],
@@ -449,6 +447,9 @@ func s:GetFilenameChecks() abort
     \ 'luau': ['file.luau'],
     \ 'lynx': ['lynx.cfg'],
     \ 'lyrics': ['file.lrc'],
+    \ 'm17ndb': ['any/m17n/file.ali', 'any/m17n/file.cs', 'any/m17n/file.dir', 'any/m17n/file.flt', 'any/m17n/file.fst', 'any/m17n/file.lnm', 'any/m17n/file.mic', 'any/m17n/file.mim', 'any/m17n/file.tbl',
+    \            'any/.m17n.d/file.ali', 'any/.m17n.d/file.cs', 'any/.m17n.d/file.dir', 'any/.m17n.d/file.flt', 'any/.m17n.d/file.fst', 'any/.m17n.d/file.lnm', 'any/.m17n.d/file.mic', 'any/.m17n.d/file.mim', 'any/.m17n.d/file.tbl',
+    \            'any/m17n-db/file.ali', 'any/m17n-db/file.cs', 'any/m17n-db/file.dir', 'any/m17n-db/FLT/file.flt', 'any/m17n-db/file.fst', 'any/m17n-db/LANGDATA/file.lnm', 'any/m17n-db/file.mic', 'any/m17n-db/MIM/file.mim', 'any/m17n-db/file.tbl'],
     \ 'm3build': ['m3makefile', 'm3overrides'],
     \ 'm3quake': ['file.quake', 'cm3.cfg'],
     \ 'm4': ['file.at', '.m4_history'],
@@ -552,6 +553,7 @@ func s:GetFilenameChecks() abort
     \ 'nqc': ['file.nqc'],
     \ 'nroff': ['file.tr', 'file.nr', 'file.roff', 'file.tmac', 'file.mom', 'tmac.file'],
     \ 'nsis': ['file.nsi', 'file.nsh'],
+    \ 'ntriples': ['file.nt'],
     \ 'nu': ['file.nu'],
     \ 'obj': ['file.obj'],
     \ 'objdump': ['file.objdump', 'file.cppobjdump'],
@@ -672,10 +674,9 @@ func s:GetFilenameChecks() abort
     \ 'samba': ['smb.conf'],
     \ 'sas': ['file.sas'],
     \ 'sass': ['file.sass'],
-    \ 'sather': ['file.sa'],
     \ 'sbt': ['file.sbt'],
-    \ 'scala': ['file.scala'],
-    \ 'scheme': ['file.scm', 'file.ss', 'file.sld', 'file.stsg', 'any/local/share/supertux2/config', '.lips_repl_history'],
+    \ 'scala': ['file.scala', 'file.mill'],
+    \ 'scheme': ['file.scm', 'file.ss', 'file.sld', 'file.stsg', 'any/local/share/supertux2/config', '.lips_repl_history', '.guile'],
     \ 'scilab': ['file.sci', 'file.sce'],
     \ 'screen': ['.screenrc', 'screenrc'],
     \ 'scss': ['file.scss'],
@@ -687,10 +688,12 @@ func s:GetFilenameChecks() abort
     \ 'services': ['/etc/services', 'any/etc/services'],
     \ 'setserial': ['/etc/serial.conf', 'any/etc/serial.conf'],
     \ 'sexplib': ['file.sexp'],
-    \ 'sh': ['/usr/share/doc/bash-completion/filter.sh', '/etc/udev/cdsymlinks.conf', 'any/etc/udev/cdsymlinks.conf',
-    \        '.ash_history', 'any/etc/neofetch/config.conf', '.xprofile', 'user-dirs.defaults', 'user-dirs.dirs',
-    \        'makepkg.conf', '.makepkg.conf', 'file.mdd', '.env', '.envrc', 'devscripts.conf', '.devscripts', 'file.lo',
-    \        'file.la', 'file.lai'],
+    \ 'sh': ['.bashrc', '.bash_profile', '.bash-profile', '.bash_logout', '.bash-logout', '.bash_aliases', '.bash-aliases', '.bash_history', '.bash-history',
+    \        '/tmp/bash-fc-3Ozjlw', '/tmp/bash-fc.3Ozjlw', 'PKGBUILD', 'file.bash', '/usr/share/doc/bash-completion/filter.sh',
+    \        '/etc/udev/cdsymlinks.conf', 'any/etc/udev/cdsymlinks.conf', 'file.bats', '.ash_history', 'any/etc/neofetch/config.conf', '.xprofile',
+    \        'user-dirs.defaults', 'user-dirs.dirs', 'makepkg.conf', '.makepkg.conf', 'file.mdd', 'file.cygport', '.env', '.envrc', 'devscripts.conf',
+    \        '.devscripts', 'file.lo', 'file.la', 'file.lai'],
+    \ 'shaderslang': ['file.slang'],
     \ 'sieve': ['file.siv', 'file.sieve'],
     \ 'sil': ['file.sil'],
     \ 'simula': ['file.sim'],
@@ -716,6 +719,8 @@ func s:GetFilenameChecks() abort
     \ 'snobol4': ['file.sno', 'file.spt'],
     \ 'solidity': ['file.sol'],
     \ 'solution': ['file.sln'],
+    \ 'spajson': ['any/pipewire/file.conf', 'any/pipewire/file.conf.d/other.conf',
+    \             'any/wireplumber/file.conf', 'any/wireplumber/file.conf.d/other.conf'],
     \ 'sparql': ['file.rq', 'file.sparql'],
     \ 'spec': ['file.spec'],
     \ 'spice': ['file.sp', 'file.spice'],
@@ -798,6 +803,7 @@ func s:GetFilenameChecks() abort
     \ 'teal': ['file.tl'],
     \ 'templ': ['file.templ'],
     \ 'template': ['file.tmpl'],
+    \ 'tera': ['file.tera', 'file.toml.tera', 'file.html.tera', 'file.css.tera'],
     \ 'teraterm': ['file.ttl'],
     \ 'terminfo': ['file.ti'],
     \ 'terraform-vars': ['file.tfvars'],
@@ -812,10 +818,15 @@ func s:GetFilenameChecks() abort
     \ 'tla': ['file.tla'],
     \ 'tli': ['file.tli'],
     \ 'tmux': ['tmuxfile.conf', '.tmuxfile.conf', '.tmux-file.conf', '.tmux.conf', 'tmux-file.conf', 'tmux.conf', 'tmux.conf.local'],
-    \ 'toml': ['file.toml', 'Gopkg.lock', 'Pipfile', '/home/user/.cargo/config', '.black'],
+    \ 'toml': ['file.toml', 'uv.lock', 'Gopkg.lock', 'Pipfile', '/home/user/.cargo/config', '.black',
+    \          'any/containers/containers.conf', 'any/containers/containers.conf.d/file.conf',
+    \          'any/containers/containers.conf.modules/file.conf', 'any/containers/containers.conf.modules/any/file.conf',
+    \          'any/containers/registries.conf', 'any/containers/registries.conf.d/file.conf',
+    \          'any/containers/storage.conf'],
     \ 'tpp': ['file.tpp'],
-    \ 'trace32': ['file.cmm', 'file.t32'],
+    \ 'trace32': ['file.cmm', 'file.cmmt', 'file.t32'],
     \ 'treetop': ['file.treetop'],
+    \ 'trig': ['file.trig'],
     \ 'trustees': ['trustees.conf'],
     \ 'tsalt': ['file.slt'],
     \ 'tsscl': ['file.tsscl'],
@@ -880,7 +891,8 @@ func s:GetFilenameChecks() abort
     \ 'xf86conf': ['xorg.conf', 'xorg.conf-4'],
     \ 'xhtml': ['file.xhtml', 'file.xht'],
     \ 'xinetd': ['/etc/xinetd.conf', '/etc/xinetd.d/file', 'any/etc/xinetd.conf', 'any/etc/xinetd.d/file'],
-    \ 'xkb': ['/usr/share/X11/xkb/compat/pc', '/usr/share/X11/xkb/geometry/pc', '/usr/share/X11/xkb/keycodes/evdev', '/usr/share/X11/xkb/symbols/pc', '/usr/share/X11/xkb/types/pc'],
+    \ 'xkb': ['any/xkb/compat/pc', 'any/xkb/geometry/pc', 'any/xkb/keycodes/evdev', 'any/xkb/symbols/pc', 'any/xkb/types/pc',
+    \         'any/.xkb/compat/pc', 'any/.xkb/geometry/pc', 'any/.xkb/keycodes/evdev', 'any/.xkb/symbols/pc', 'any/.xkb/types/pc'],
     \ 'xmath': ['file.msc', 'file.msf'],
     \ 'xml': ['/etc/blkid.tab', '/etc/blkid.tab.old', 'file.xmi', 'file.csproj', 'file.csproj.user', 'file.fsproj', 'file.fsproj.user', 'file.vbproj', 'file.vbproj.user', 'file.ui',
     \         'file.tpm', '/etc/xdg/menus/file.menu', 'fglrxrc', 'file.xlf', 'file.xliff', 'file.xul', 'file.wsdl', 'file.wpl', 'any/etc/blkid.tab', 'any/etc/blkid.tab.old',
@@ -910,8 +922,6 @@ func s:GetFilenameChecks() abort
     \         '.zcompdump', '.zlogin', '.zlogout', '.zshenv', '.zshrc', '.zsh_history',
     \         '.zcompdump-file', '.zlog', '.zlog-file', '.zsh', '.zsh-file',
     \         'any/etc/zprofile', 'zlog', 'zlog-file', 'zsh', 'zsh-file'],
-    \
-    \ 'help': [$VIMRUNTIME .. '/doc/help.txt'],
     \ }
 endfunc
 
@@ -926,6 +936,9 @@ func CheckItems(checks)
   set noswapfile
   for [ft, names] in items(a:checks)
     for i in range(0, len(names) - 1)
+      if isdirectory(fnameescape(names[i]))
+        continue
+      endif
       new
       try
         exe 'edit ' .. fnameescape(names[i])
@@ -981,11 +994,11 @@ func s:GetScriptChecks() abort
       \ 'clojure': [['#!/path/clojure']],
       \ 'scala': [['#!/path/scala']],
       \ 'sh':  [['#!/path/sh'],
+      \         ['#!/path/bash'],
+      \         ['#!/path/bash2'],
       \         ['#!/path/dash'],
       \         ['#!/path/ksh'],
       \         ['#!/path/ksh93']],
-      \ 'bash': [['#!/path/bash'],
-      \          ['#!/path/bash2']],
       \ 'csh': [['#!/path/csh']],
       \ 'tcsh': [['#!/path/tcsh']],
       \ 'zsh': [['#!/path/zsh']],
@@ -997,6 +1010,7 @@ func s:GetScriptChecks() abort
       \ 'expect': [['#!/path/expect']],
       \ 'execline': [['#!/sbin/execlineb -S0'], ['#!/usr/bin/execlineb']],
       \ 'gnuplot': [['#!/path/gnuplot']],
+      \ 'just': [['#!/path/just']],
       \ 'make': [['#!/path/make']],
       \ 'nix': [['#!/path/nix-shell']],
       \ 'pike': [['#!/path/pike'],
@@ -1611,6 +1625,36 @@ func Test_haredoc_file()
   unlet g:haredoc_search_depth
 
   filetype off
+endfunc
+
+func Test_help_file()
+  set nomodeline
+  filetype on
+  call assert_true(mkdir('doc', 'pR'))
+
+  call writefile(['some text', 'vim:ft=help:'], 'doc/help.txt', 'D')
+  split doc/help.txt
+  call assert_equal('help', &filetype)
+  bwipe!
+
+  call writefile(['some text', 'Copyright: |manual-copyright| vim:ft=help:'],
+        \ 'doc/help1.txt', 'D')
+  split doc/help1.txt
+  call assert_equal('help', &filetype)
+  bwipe!
+
+  call writefile(['some text'], 'doc/nothelp.txt', 'D')
+  split doc/nothelp.txt
+  call assert_notequal('help', &filetype)
+  bwipe!
+
+  call writefile(['some text', '`vim:ft=help`'], 'doc/nothelp1.txt', 'D')
+  split doc/nothelp1.txt
+  call assert_notequal('help', &filetype)
+  bwipe!
+
+  filetype off
+  set modeline&
 endfunc
 
 func Test_hook_file()
@@ -2316,6 +2360,22 @@ func Test_cmd_file()
   call writefile(['REM comment'], 'Xfile.cmd')
   split Xfile.cmd
   call assert_equal('dosbatch', &filetype)
+  bwipe!
+
+  filetype off
+endfunc
+
+func Test_sa_file()
+  filetype on
+
+  call writefile([';* XXX-a.sa: XXX for TI C6000 DSP *;', '.no_mdep'], 'Xfile.sa')
+  split Xfile.sa
+  call assert_equal('tiasm', &filetype)
+  bwipe!
+
+  call writefile(['-- comment'], 'Xfile.sa')
+  split Xfile.sa
+  call assert_equal('sather', &filetype)
   bwipe!
 
   filetype off

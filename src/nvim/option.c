@@ -980,12 +980,12 @@ static int validate_opt_idx(win_T *win, OptIndex opt_idx, int opt_flags, uint32_
 
   // Skip all options that are not window-local (used when showing
   // an already loaded buffer in a window).
-  if ((opt_flags & OPT_WINONLY) && (opt_idx == kOptInvalid || !option_is_window_local(opt_idx))) {
+  if ((opt_flags & OPT_WINONLY) && !option_is_window_local(opt_idx)) {
     return FAIL;
   }
 
   // Skip all options that are window-local (used for :vimgrep).
-  if ((opt_flags & OPT_NOWIN) && opt_idx != kOptInvalid && option_is_window_local(opt_idx)) {
+  if ((opt_flags & OPT_NOWIN) && option_is_window_local(opt_idx)) {
     return FAIL;
   }
 
@@ -1286,11 +1286,11 @@ static void do_one_set_option(int opt_flags, char **argp, bool *did_show, char *
     if (p_verbose > 0) {
       // Mention where the option was last set.
       if (varp == options[opt_idx].var) {
-        option_last_set_msg(options[opt_idx].last_set);
+        last_set_msg(options[opt_idx].script_ctx);
       } else if (option_has_scope(opt_idx, kOptScopeWin)) {
-        option_last_set_msg(curwin->w_p_script_ctx[option_scope_idx(opt_idx, kOptScopeWin)]);
+        last_set_msg(curwin->w_p_script_ctx[option_scope_idx(opt_idx, kOptScopeWin)]);
       } else if (option_has_scope(opt_idx, kOptScopeBuf)) {
-        option_last_set_msg(curbuf->b_p_script_ctx[option_scope_idx(opt_idx, kOptScopeBuf)]);
+        last_set_msg(curbuf->b_p_script_ctx[option_scope_idx(opt_idx, kOptScopeBuf)]);
       }
     }
 
@@ -1805,7 +1805,7 @@ bool parse_winhl_opt(const char *winhl, win_T *wp)
 sctx_T *get_option_sctx(OptIndex opt_idx)
 {
   assert(opt_idx != kOptInvalid);
-  return &options[opt_idx].last_set.script_ctx;
+  return &options[opt_idx].script_ctx;
 }
 
 /// Set the script_ctx for an option, taking care of setting the buffer- or
@@ -1813,30 +1813,26 @@ sctx_T *get_option_sctx(OptIndex opt_idx)
 void set_option_sctx(OptIndex opt_idx, int opt_flags, sctx_T script_ctx)
 {
   bool both = (opt_flags & (OPT_LOCAL | OPT_GLOBAL)) == 0;
-  nlua_set_sctx(&script_ctx);
-  LastSet last_set = {
-    .script_ctx = script_ctx,
-    .channel_id = current_channel_id,
-  };
 
   // Modeline already has the line number set.
   if (!(opt_flags & OPT_MODELINE)) {
-    last_set.script_ctx.sc_lnum += SOURCING_LNUM;
+    script_ctx.sc_lnum += SOURCING_LNUM;
   }
+  nlua_set_sctx(&script_ctx);
 
   // Remember where the option was set.  For local options need to do that
   // in the buffer or window structure.
   if (both || (opt_flags & OPT_GLOBAL) || option_is_global_only(opt_idx)) {
-    options[opt_idx].last_set = last_set;
+    options[opt_idx].script_ctx = script_ctx;
   }
   if (both || (opt_flags & OPT_LOCAL)) {
     if (option_has_scope(opt_idx, kOptScopeBuf)) {
-      curbuf->b_p_script_ctx[option_scope_idx(opt_idx, kOptScopeBuf)] = last_set;
+      curbuf->b_p_script_ctx[option_scope_idx(opt_idx, kOptScopeBuf)] = script_ctx;
     } else if ((option_has_scope(opt_idx, kOptScopeWin))) {
-      curwin->w_p_script_ctx[option_scope_idx(opt_idx, kOptScopeWin)] = last_set;
+      curwin->w_p_script_ctx[option_scope_idx(opt_idx, kOptScopeWin)] = script_ctx;
       if (both) {
         // also setting the "all buffers" value
-        curwin->w_allbuf_opt.wo_script_ctx[option_scope_idx(opt_idx, kOptScopeWin)] = last_set;
+        curwin->w_allbuf_opt.wo_script_ctx[option_scope_idx(opt_idx, kOptScopeWin)] = script_ctx;
       }
     }
   }
@@ -2120,14 +2116,14 @@ static const char *did_set_laststatus(optset_T *args)
   // When switching to global statusline, decrease topframe height
   // Also clear the cmdline to remove the ruler if there is one
   if (value == 3 && old_value != 3) {
-    frame_new_height(topframe, topframe->fr_height - STATUS_HEIGHT, false, false);
+    frame_new_height(topframe, topframe->fr_height - STATUS_HEIGHT, false, false, false);
     win_comp_pos();
     clear_cmdline = true;
   }
   // When switching from global statusline, increase height of topframe by STATUS_HEIGHT
   // in order to to re-add the space that was previously taken by the global statusline
   if (old_value == 3 && value != 3) {
-    frame_new_height(topframe, topframe->fr_height + STATUS_HEIGHT, false, false);
+    frame_new_height(topframe, topframe->fr_height + STATUS_HEIGHT, false, false, false);
     win_comp_pos();
   }
 
@@ -2872,8 +2868,6 @@ static const char *validate_num_option(OptIndex opt_idx, OptInt *newval, char *e
   case kOptCmdheight:
     if (value < 0) {
       return e_positive;
-    } else {
-      p_ch_was_zero = value == 0;
     }
     break;
   case kOptHistory:
@@ -3123,17 +3117,10 @@ bool optval_equal(OptVal o1, OptVal o2)
   UNREACHABLE;
 }
 
-/// Get type of option. Does not support multitype options.
+/// Get type of option.
 static OptValType option_get_type(const OptIndex opt_idx)
 {
-  assert(!option_is_multitype(opt_idx));
-
-  // If the option only supports a single type, it means that the index of the option's type flag
-  // corresponds to the value of the type enum. So get the index of the type flag using xctz() and
-  // use that as the option's type.
-  OptValType type = xctz(options[opt_idx].type_flags);
-  assert(type > kOptValTypeNil && type < kOptValTypeSize);
-  return type;
+  return options[opt_idx].type;
 }
 
 /// Create OptVal from var pointer.
@@ -3149,11 +3136,6 @@ OptVal optval_from_varp(OptIndex opt_idx, void *varp)
   // changed.
   if ((int *)varp == &curbuf->b_changed) {
     return BOOLEAN_OPTVAL(curbufIsChanged());
-  }
-
-  if (option_is_multitype(opt_idx)) {
-    // Multitype options are stored as OptVal.
-    return *(OptVal *)varp;
   }
 
   OptValType type = option_get_type(opt_idx);
@@ -3266,33 +3248,6 @@ OptVal object_as_optval(Object o, bool *error)
   UNREACHABLE;
 }
 
-/// Get an allocated string containing a list of valid types for an option.
-/// For options with a singular type, it returns the name of the type. For options with multiple
-/// possible types, it returns a slash separated list of types. For example, if an option can be a
-/// number, boolean or string, the function returns "number/boolean/string"
-static char *option_get_valid_types(OptIndex opt_idx)
-{
-  StringBuilder str = KV_INITIAL_VALUE;
-  kv_resize(str, 32);
-
-  // Iterate through every valid option value type and check if the option supports that type
-  for (OptValType type = 0; type < kOptValTypeSize; type++) {
-    if (option_has_type(opt_idx, type)) {
-      const char *typename = optval_type_get_name(type);
-
-      if (str.size == 0) {
-        kv_concat(str, typename);
-      } else {
-        kv_printf(str, "/%s", typename);
-      }
-    }
-  }
-
-  // Ensure that the string is NUL-terminated.
-  kv_push(str, NUL);
-  return str.items;
-}
-
 /// Check if option is hidden.
 ///
 /// @param  opt_idx  Option index in options[] table.
@@ -3305,25 +3260,10 @@ bool is_option_hidden(OptIndex opt_idx)
          && options[opt_idx].var == &options[opt_idx].def_val.data;
 }
 
-/// Check if option is multitype (supports multiple types).
-static bool option_is_multitype(OptIndex opt_idx)
-{
-  const OptTypeFlags type_flags = get_option(opt_idx)->type_flags;
-  assert(type_flags != 0);
-  return !is_power_of_two(type_flags);
-}
-
 /// Check if option supports a specific type.
 bool option_has_type(OptIndex opt_idx, OptValType type)
 {
-  // Ensure that type flags variable can hold all types.
-  STATIC_ASSERT(kOptValTypeSize <= sizeof(OptTypeFlags) * 8,
-                "Option type_flags cannot fit all option types");
-  // Ensure that the type is valid before accessing type_flags.
-  assert(type > kOptValTypeNil && type < kOptValTypeSize);
-  // Bitshift 1 by the value of type to get the type's corresponding flag, and check if it's set in
-  // the type_flags bit field.
-  return get_option(opt_idx)->type_flags & (1 << type);
+  return opt_idx != kOptInvalid && options[opt_idx].type == type;
 }
 
 /// Check if option supports a specific scope.
@@ -3545,15 +3485,7 @@ static const char *did_set_option(OptIndex opt_idx, void *varp, OptVal old_value
   new_value = optval_from_varp(opt_idx, varp);
 
   if (set_sid != SID_NONE) {
-    sctx_T script_ctx;
-
-    if (set_sid == 0) {
-      script_ctx = current_sctx;
-    } else {
-      script_ctx.sc_sid = set_sid;
-      script_ctx.sc_seq = 0;
-      script_ctx.sc_lnum = 0;
-    }
+    sctx_T script_ctx = set_sid == 0 ? current_sctx : (sctx_T){ .sc_sid = set_sid };
     // Remember where the option was set.
     set_option_sctx(opt_idx, opt_flags, script_ctx);
   }
@@ -3660,11 +3592,10 @@ static const char *validate_option_value(const OptIndex opt_idx, OptVal *newval,
     }
   } else if (!option_has_type(opt_idx, newval->type)) {
     char *rep = optval_to_cstr(*newval);
-    char *valid_types = option_get_valid_types(opt_idx);
+    const char *type_str = optval_type_get_name(opt->type);
     snprintf(errbuf, IOSIZE, _("Invalid value for option '%s': expected %s, got %s %s"),
-             opt->fullname, valid_types, optval_type_get_name(newval->type), rep);
+             opt->fullname, type_str, optval_type_get_name(newval->type), rep);
     xfree(rep);
-    xfree(valid_types);
     errmsg = errbuf;
   } else if (newval->type == kOptValTypeNumber) {
     // Validate and bound check num option values.
@@ -4637,6 +4568,8 @@ void *get_varp_from(vimoption_T *p, buf_T *buf, win_T *win)
     return &(win->w_p_cc);
   case kOptDiff:
     return &(win->w_p_diff);
+  case kOptEventignorewin:
+    return &(win->w_p_eiw);
   case kOptFoldcolumn:
     return &(win->w_p_fdc);
   case kOptFoldenable:
@@ -4932,6 +4865,7 @@ void copy_winopt(winopt_T *from, winopt_T *to)
   to->wo_cc = copy_option_val(from->wo_cc);
   to->wo_diff = from->wo_diff;
   to->wo_diff_saved = from->wo_diff_saved;
+  to->wo_eiw = copy_option_val(from->wo_eiw);
   to->wo_cocu = copy_option_val(from->wo_cocu);
   to->wo_cole = from->wo_cole;
   to->wo_fdc = copy_option_val(from->wo_fdc);
@@ -4976,6 +4910,7 @@ static void check_winopt(winopt_T *wop)
   check_string_option(&wop->wo_fde);
   check_string_option(&wop->wo_fdt);
   check_string_option(&wop->wo_fmr);
+  check_string_option(&wop->wo_eiw);
   check_string_option(&wop->wo_scl);
   check_string_option(&wop->wo_rlc);
   check_string_option(&wop->wo_sbr);
@@ -5003,6 +4938,7 @@ void clear_winopt(winopt_T *wop)
   clear_string_option(&wop->wo_fde);
   clear_string_option(&wop->wo_fdt);
   clear_string_option(&wop->wo_fmr);
+  clear_string_option(&wop->wo_eiw);
   clear_string_option(&wop->wo_scl);
   clear_string_option(&wop->wo_rlc);
   clear_string_option(&wop->wo_sbr);
@@ -5039,7 +4975,7 @@ void didset_window_options(win_T *wp, bool valid_cursor)
   wp->w_grid_alloc.blending = wp->w_p_winbl > 0;
 }
 
-#define COPY_OPT_SCTX(buf, bv) buf->b_p_script_ctx[bv] = options[buf_opt_idx[bv]].last_set
+#define COPY_OPT_SCTX(buf, bv) buf->b_p_script_ctx[bv] = options[buf_opt_idx[bv]].script_ctx
 
 /// Copy global option values to local options for one buffer.
 /// Used when creating a new buffer and sometimes when entering a buffer.
@@ -5283,7 +5219,7 @@ void buf_copy_options(buf_T *buf, int flags)
       // or to a help buffer.
       if (dont_do_help) {
         buf->b_p_isk = save_p_isk;
-        if (p_vts && p_vts != empty_string_option && !buf->b_p_vts_array) {
+        if (p_vts && *p_vts != NUL && !buf->b_p_vts_array) {
           tabstop_set(p_vts, &buf->b_p_vts_array);
         } else {
           buf->b_p_vts_array = NULL;
@@ -5296,7 +5232,7 @@ void buf_copy_options(buf_T *buf, int flags)
         COPY_OPT_SCTX(buf, kBufOptTabstop);
         buf->b_p_vts = xstrdup(p_vts);
         COPY_OPT_SCTX(buf, kBufOptVartabstop);
-        if (p_vts && p_vts != empty_string_option && !buf->b_p_vts_array) {
+        if (p_vts && *p_vts != NUL && !buf->b_p_vts_array) {
           tabstop_set(p_vts, &buf->b_p_vts_array);
         } else {
           buf->b_p_vts_array = NULL;
@@ -5772,6 +5708,7 @@ int ExpandStringSetting(expand_T *xp, regmatch_T *regmatch, int *numMatches, cha
 
   optexpand_T args = {
     .oe_varp = get_varp_scope(&options[expand_option_idx], expand_option_flags),
+    .oe_idx = expand_option_idx,
     .oe_append = expand_option_append,
     .oe_regmatch = regmatch,
     .oe_xp = xp,
@@ -6400,25 +6337,25 @@ static Dict vimoption2dict(vimoption_T *opt, int opt_flags, buf_T *buf, win_T *w
 
   PUT_C(dict, "was_set", BOOLEAN_OBJ(opt->flags & kOptFlagWasSet));
 
-  LastSet last_set = { .channel_id = 0 };
+  sctx_T script_ctx = { .sc_sid = 0 };
   if (opt_flags == OPT_GLOBAL) {
-    last_set = opt->last_set;
+    script_ctx = opt->script_ctx;
   } else {
     // Scope is either OPT_LOCAL or a fallback mode was requested.
     if (option_has_scope(opt_idx, kOptScopeBuf)) {
-      last_set = buf->b_p_script_ctx[opt->scope_idx[kOptScopeBuf]];
+      script_ctx = buf->b_p_script_ctx[opt->scope_idx[kOptScopeBuf]];
     }
     if (option_has_scope(opt_idx, kOptScopeWin)) {
-      last_set = win->w_p_script_ctx[opt->scope_idx[kOptScopeWin]];
+      script_ctx = win->w_p_script_ctx[opt->scope_idx[kOptScopeWin]];
     }
-    if (opt_flags != OPT_LOCAL && last_set.script_ctx.sc_sid == 0) {
-      last_set = opt->last_set;
+    if (opt_flags != OPT_LOCAL && script_ctx.sc_sid == 0) {
+      script_ctx = opt->script_ctx;
     }
   }
 
-  PUT_C(dict, "last_set_sid", INTEGER_OBJ(last_set.script_ctx.sc_sid));
-  PUT_C(dict, "last_set_linenr", INTEGER_OBJ(last_set.script_ctx.sc_lnum));
-  PUT_C(dict, "last_set_chan", INTEGER_OBJ((int64_t)last_set.channel_id));
+  PUT_C(dict, "last_set_sid", INTEGER_OBJ(script_ctx.sc_sid));
+  PUT_C(dict, "last_set_linenr", INTEGER_OBJ(script_ctx.sc_lnum));
+  PUT_C(dict, "last_set_chan", INTEGER_OBJ((int64_t)script_ctx.sc_chan));
 
   PUT_C(dict, "type", CSTR_AS_OBJ(optval_type_get_name(option_get_type(get_opt_idx(opt)))));
   PUT_C(dict, "default", optval_as_object(opt->def_val));

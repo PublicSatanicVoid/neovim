@@ -201,7 +201,10 @@ local function highlight_man_page()
   api.nvim_buf_set_lines(0, 0, -1, false, lines)
 
   for _, hl in ipairs(hls) do
-    api.nvim_buf_add_highlight(0, -1, HlGroups[hl.attr], hl.row, hl.start, hl.final)
+    if hl.attr ~= Attrs.None then
+      --- @diagnostic disable-next-line: deprecated
+      api.nvim_buf_add_highlight(0, -1, HlGroups[hl.attr], hl.row, hl.start, hl.final)
+    end
   end
 
   vim.bo.modifiable = mod
@@ -797,7 +800,7 @@ function M.show_toc()
   end
 
   fn.setloclist(0, toc, ' ')
-  fn.setloclist(0, {}, 'a', { title = 'Man TOC' })
+  fn.setloclist(0, {}, 'a', { title = 'Table of contents' })
   vim.cmd.lopen()
   vim.w.qf_toc = bufname
 end

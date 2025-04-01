@@ -56,7 +56,6 @@ func Test_window_cmd_cmdwin_with_vsp()
 endfunc
 
 func Test_cmdheight_not_changed()
-  throw 'Skipped: N/A'
   set cmdheight=2
   set winminheight=0
   augroup Maximize
@@ -1932,6 +1931,18 @@ func Test_splitkeep_misc()
 
   %bwipeout!
   set splitbelow&
+  set splitkeep&
+endfunc
+
+func Test_splitkeep_screen_cursor_pos()
+  new
+  set splitkeep=screen
+  call setline(1, ["longer than the last", "shorter"])
+  norm! $
+  wincmd s
+  close
+  call assert_equal([0, 1, 20, 0], getpos('.'))
+  %bwipeout!
   set splitkeep&
 endfunc
 

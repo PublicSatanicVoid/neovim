@@ -29,8 +29,8 @@ local bufstates = vim.defaulttable(function(_)
   })
 end)
 
-local namespace = api.nvim_create_namespace('vim_lsp_inlayhint')
-local augroup = api.nvim_create_augroup('vim_lsp_inlayhint', {})
+local namespace = api.nvim_create_namespace('nvim.lsp.inlayhint')
+local augroup = api.nvim_create_augroup('nvim.lsp.inlayhint', {})
 
 --- |lsp-handler| for the method `textDocument/inlayHint`
 --- Store hints for a specific buffer and client
@@ -94,7 +94,10 @@ function M.on_refresh(err, _, ctx)
   for _, bufnr in ipairs(vim.lsp.get_buffers_by_client_id(ctx.client_id)) do
     for _, winid in ipairs(api.nvim_list_wins()) do
       if api.nvim_win_get_buf(winid) == bufnr then
-        util._refresh(ms.textDocument_inlayHint, { bufnr = bufnr })
+        if bufstates[bufnr] and bufstates[bufnr].enabled then
+          bufstates[bufnr].applied = {}
+          util._refresh(ms.textDocument_inlayHint, { bufnr = bufnr })
+        end
       end
     end
   end

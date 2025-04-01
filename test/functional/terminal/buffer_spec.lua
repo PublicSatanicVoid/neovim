@@ -333,49 +333,151 @@ describe(':terminal buffer', function()
     command('bdelete!')
   end)
 
-  it('emits TermRequest events #26972', function()
-    local term = api.nvim_open_term(0, {})
-    local termbuf = api.nvim_get_current_buf()
+  describe('TermRequest', function()
+    it('emits events #26972', function()
+      local term = api.nvim_open_term(0, {})
+      local termbuf = api.nvim_get_current_buf()
 
-    -- Test that <abuf> is the terminal buffer, not the current buffer
-    command('au TermRequest * let g:termbuf = +expand("<abuf>")')
-    command('wincmd p')
+      -- Test that <abuf> is the terminal buffer, not the current buffer
+      command('au TermRequest * let g:termbuf = +expand("<abuf>")')
+      command('wincmd p')
 
-    -- cwd will be inserted in a file URI, which cannot contain backs
-    local cwd = t.fix_slashes(fn.getcwd())
-    local parent = cwd:match('^(.+/)')
-    local expected = '\027]7;file://host' .. parent
-    api.nvim_chan_send(term, string.format('%s\027\\', expected))
-    eq(expected, eval('v:termrequest'))
-    eq(termbuf, eval('g:termbuf'))
-  end)
+      -- cwd will be inserted in a file URI, which cannot contain backs
+      local cwd = t.fix_slashes(fn.getcwd())
+      local parent = cwd:match('^(.+/)')
+      local expected = '\027]7;file://host' .. parent
+      api.nvim_chan_send(term, string.format('%s\027\\', expected))
+      eq(expected, eval('v:termrequest'))
+      eq(termbuf, eval('g:termbuf'))
+    end)
 
-  it('TermRequest synchronization #27572', function()
-    command('autocmd! nvim_terminal TermRequest')
-    local term = exec_lua([[
-      _G.input = {}
-      local term = vim.api.nvim_open_term(0, {
-        on_input = function(_, _, _, data)
-          table.insert(_G.input, data)
-        end,
-        force_crlf = false,
-      })
-      vim.api.nvim_create_autocmd('TermRequest', {
-        callback = function(args)
-          if args.data == '\027]11;?' then
-            table.insert(_G.input, '\027]11;rgb:0000/0000/0000\027\\')
+    it('emits events for APC', function()
+      local term = api.nvim_open_term(0, {})
+
+      -- cwd will be inserted in a file URI, which cannot contain backs
+      local cwd = t.fix_slashes(fn.getcwd())
+      local parent = cwd:match('^(.+/)')
+      local expected = '\027_Gfile://host' .. parent
+      api.nvim_chan_send(term, string.format('%s\027\\', expected))
+      eq(expected, eval('v:termrequest'))
+    end)
+
+    it('synchronization #27572', function()
+      command('autocmd! nvim.terminal TermRequest')
+      local term = exec_lua([[
+        _G.input = {}
+        local term = vim.api.nvim_open_term(0, {
+          on_input = function(_, _, _, data)
+            table.insert(_G.input, data)
+          end,
+          force_crlf = false,
+        })
+        vim.api.nvim_create_autocmd('TermRequest', {
+          callback = function(args)
+            if args.data.sequence == '\027]11;?' then
+              table.insert(_G.input, '\027]11;rgb:0000/0000/0000\027\\')
+            end
           end
-        end
-      })
-      return term
-    ]])
-    api.nvim_chan_send(term, '\027]11;?\007\027[5n\027]11;?\007\027[5n')
-    eq({
-      '\027]11;rgb:0000/0000/0000\027\\',
-      '\027[0n',
-      '\027]11;rgb:0000/0000/0000\027\\',
-      '\027[0n',
-    }, exec_lua('return _G.input'))
+        })
+        return term
+      ]])
+      api.nvim_chan_send(term, '\027]11;?\007\027[5n\027]11;?\007\027[5n')
+      eq({
+        '\027]11;rgb:0000/0000/0000\027\\',
+        '\027[0n',
+        '\027]11;rgb:0000/0000/0000\027\\',
+        '\027[0n',
+      }, exec_lua('return _G.input'))
+    end)
+
+    it('works with vim.wait() from another autocommand #32706', function()
+      command('autocmd! nvim.terminal TermRequest')
+      exec_lua([[
+        local term = vim.api.nvim_open_term(0, {})
+        vim.api.nvim_create_autocmd('TermRequest', {
+          buffer = 0,
+          callback = function(ev)
+            _G.sequence = ev.data.sequence
+            _G.v_termrequest = vim.v.termrequest
+          end,
+        })
+        vim.api.nvim_create_autocmd('TermEnter', {
+          buffer = 0,
+          callback = function()
+            vim.api.nvim_chan_send(term, '\027]11;?\027\\')
+            _G.result = vim.wait(3000, function()
+              local expected = '\027]11;?'
+              return _G.sequence == expected and _G.v_termrequest == expected
+            end)
+          end,
+        })
+      ]])
+      feed('i')
+      retry(nil, 4000, function()
+        eq(true, exec_lua('return _G.result'))
+      end)
+    end)
+
+    it('includes cursor position #31609', function()
+      command('autocmd! nvim.terminal TermRequest')
+      local screen = Screen.new(50, 10)
+      local term = exec_lua([[
+        _G.cursor = {}
+        local term = vim.api.nvim_open_term(0, {})
+        vim.api.nvim_create_autocmd('TermRequest', {
+          callback = function(args)
+            _G.cursor = args.data.cursor
+          end
+        })
+        return term
+      ]])
+      -- Enter terminal mode so that the cursor follows the output
+      feed('a')
+
+      -- Put some lines into the scrollback. This tests the conversion from terminal line to buffer
+      -- line.
+      api.nvim_chan_send(term, string.rep('>\n', 20))
+      screen:expect([[
+        >                                                 |*8
+        ^                                                  |
+        {5:-- TERMINAL --}                                    |
+      ]])
+
+      -- Emit an OSC escape sequence
+      api.nvim_chan_send(term, 'Hello\nworld!\027]133;D\027\\')
+      screen:expect([[
+        >                                                 |*7
+        Hello                                             |
+        world!^                                            |
+        {5:-- TERMINAL --}                                    |
+      ]])
+      eq({ 22, 6 }, exec_lua('return _G.cursor'))
+    end)
+
+    it('does not cause hang in vim.wait() #32753', function()
+      local screen = Screen.new(50, 10)
+
+      exec_lua(function()
+        local term = vim.api.nvim_open_term(0, {})
+
+        -- Write OSC sequence with pending scrollback. TermRequest will
+        -- reschedule itself onto an event queue until the pending scrollback is
+        -- processed (i.e. the terminal is refreshed).
+        vim.api.nvim_chan_send(term, string.format('%s\027]133;;\007', string.rep('a\n', 100)))
+
+        -- vim.wait() drains the event queue. The terminal won't be refreshed
+        -- until the event queue is empty. This test ensures that TermRequest
+        -- does not continuously reschedule itself onto the same event queue,
+        -- causing an infinite loop.
+        vim.wait(100)
+      end)
+
+      screen:expect([[
+        ^a                                                 |
+        a                                                 |*8
+                                                          |
+      ]])
+    end)
   end)
 
   it('no heap-buffer-overflow when using jobstart("echo",{term=true}) #3161', function()
@@ -433,6 +535,19 @@ describe(':terminal buffer', function()
       3: å̲                                              |
                                                         |*2
     ]])
+  end)
+
+  it('handles unprintable chars', function()
+    local screen = Screen.new(50, 7)
+    feed 'i'
+    local chan = api.nvim_open_term(0, {})
+    api.nvim_chan_send(chan, '\239\187\191') -- '\xef\xbb\xbf'
+    screen:expect([[
+      {18:<feff>}^                                            |
+                                                        |*5
+      {5:-- TERMINAL --}                                    |
+    ]])
+    eq('\239\187\191', api.nvim_get_current_line())
   end)
 
   it("handles bell respecting 'belloff' and 'visualbell'", function()
@@ -544,7 +659,7 @@ describe('terminal input', function()
       '--cmd',
       'set notermguicolors',
       '-c',
-      'while 1 | redraw | echo keytrans(getcharstr()) | endwhile',
+      'while 1 | redraw | echo keytrans(getcharstr(-1, #{simplify: 0})) | endwhile',
     })
     screen:expect([[
       ^                                                  |
@@ -553,7 +668,10 @@ describe('terminal input', function()
                                                         |
       {3:-- TERMINAL --}                                    |
     ]])
-    for _, key in ipairs({
+    local keys = {
+      '<Tab>',
+      '<CR>',
+      '<Esc>',
       '<M-Tab>',
       '<M-CR>',
       '<M-Esc>',
@@ -581,18 +699,36 @@ describe('terminal input', function()
       '<S-End>',
       '<C-End>',
       '<End>',
-      '<C-LeftMouse>',
-      '<C-LeftRelease>',
-      '<2-LeftMouse>',
-      '<2-LeftRelease>',
-      '<S-RightMouse>',
-      '<S-RightRelease>',
-      '<2-RightMouse>',
-      '<2-RightRelease>',
-      '<M-MiddleMouse>',
-      '<M-MiddleRelease>',
-      '<2-MiddleMouse>',
-      '<2-MiddleRelease>',
+      '<C-LeftMouse><0,0>',
+      '<C-LeftDrag><0,1>',
+      '<C-LeftRelease><0,1>',
+      '<2-LeftMouse><0,1>',
+      '<2-LeftDrag><0,0>',
+      '<2-LeftRelease><0,0>',
+      '<M-MiddleMouse><0,0>',
+      '<M-MiddleDrag><0,1>',
+      '<M-MiddleRelease><0,1>',
+      '<2-MiddleMouse><0,1>',
+      '<2-MiddleDrag><0,0>',
+      '<2-MiddleRelease><0,0>',
+      '<S-RightMouse><0,0>',
+      '<S-RightDrag><0,1>',
+      '<S-RightRelease><0,1>',
+      '<2-RightMouse><0,1>',
+      '<2-RightDrag><0,0>',
+      '<2-RightRelease><0,0>',
+      '<S-X1Mouse><0,0>',
+      '<S-X1Drag><0,1>',
+      '<S-X1Release><0,1>',
+      '<2-X1Mouse><0,1>',
+      '<2-X1Drag><0,0>',
+      '<2-X1Release><0,0>',
+      '<S-X2Mouse><0,0>',
+      '<S-X2Drag><0,1>',
+      '<S-X2Release><0,1>',
+      '<2-X2Mouse><0,1>',
+      '<2-X2Drag><0,0>',
+      '<2-X2Release><0,0>',
       '<S-ScrollWheelUp>',
       '<S-ScrollWheelDown>',
       '<ScrollWheelUp>',
@@ -601,7 +737,14 @@ describe('terminal input', function()
       '<S-ScrollWheelRight>',
       '<ScrollWheelLeft>',
       '<ScrollWheelRight>',
-    }) do
+    }
+    -- FIXME: The escape sequence to enable kitty keyboard mode doesn't work on Windows
+    if not is_os('win') then
+      table.insert(keys, '<C-I>')
+      table.insert(keys, '<C-M>')
+      table.insert(keys, '<C-[>')
+    end
+    for _, key in ipairs(keys) do
       feed(key)
       screen:expect(([[
                                                           |
@@ -609,7 +752,7 @@ describe('terminal input', function()
         {5:[No Name]                       0,0-1          All}|
         %s^ {MATCH: *}|
         {3:-- TERMINAL --}                                    |
-      ]]):format(key))
+      ]]):format(key:gsub('<%d+,%d+>$', '')))
     end
   end)
 end)

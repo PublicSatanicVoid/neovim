@@ -13,11 +13,43 @@ They should not be used in new scripts, and old scripts should be updated.
 Deprecated features
 
 ------------------------------------------------------------------------------
+DEPRECATED IN 0.12					*deprecated-0.12*
+
+API
+
+• todo
+
+DIAGNOSTICS
+
+• todo
+
+HIGHLIGHTS
+
+• todo
+
+LSP
+
+• todo
+
+LUA
+
+• todo
+
+VIMSCRIPT
+
+• todo
+
+------------------------------------------------------------------------------
 DEPRECATED IN 0.11					*deprecated-0.11*
 
 API
+• nvim_notify()		Use |nvim_echo()| or `nvim_exec_lua("vim.notify(...)", ...)` instead.
 • nvim_subscribe()	Plugins must maintain their own "multicast" channels list.
 • nvim_unsubscribe()	Plugins must maintain their own "multicast" channels list.
+• nvim_out_write()	Use |nvim_echo()|.
+• nvim_err_write()	Use |nvim_echo()| with `{err=true}`.
+• nvim_err_writeln()	Use |nvim_echo()| with `{err=true}`.
+• nvim_buf_add_highlight()	Use |vim.hl.range()| or |nvim_buf_set_extmark()|
 
 DIAGNOSTICS
 • *vim.diagnostic.goto_next()*	Use |vim.diagnostic.jump()| with `{count=1, float=true}` instead.
@@ -37,7 +69,7 @@ LSP
 • *vim.lsp.util.jump_to_location*	Use |vim.lsp.util.show_document()| with
 					`{focus=true}` instead.
 • *vim.lsp.buf.execute_command*		Use |Client:exec_cmd()| instead.
-• *vim.lsp.buf.completion*		Use |vim.lsp.completion.trigger()| instead.
+• *vim.lsp.buf.completion*		Use |vim.lsp.completion.get()| instead.
 • vim.lsp.buf_request_all		The `error` key has been renamed to `err` inside
 					the result parameter of the handler.
 • *vim.lsp.with()*			Pass configuration to equivalent
@@ -59,10 +91,6 @@ LUA
 • vim.region()		Use |getregionpos()| instead.
 • *vim.highlight*	Renamed to |vim.hl|.
 • vim.validate(opts: table) Use form 1. See |vim.validate()|.
-
-TREESITTER
-• *TSNode:child_containing_descendant()* Use |TSNode:child_with_descendant()|
-  instead; it is identical except that it can return the descendant itself.
 
 VIMSCRIPT
 • *termopen()* Use |jobstart() with `{term: v:true}`.
@@ -177,8 +205,8 @@ ENVIRONMENT VARIABLES
     • get the server name (use |v:servername| instead)
     • detect a parent Nvim (use |$NVIM| instead)
   • Ignored if --listen is given.
-  • Unset by |terminal| and |jobstart()| unless explicitly given by the "env"
-    option. Example: >vim
+  • Unset at startup (after |v:servername| is initialized). Can be explicitly
+    provided to |terminal| and |jobstart()| by the "env" option. Example: >vim
 	call jobstart(['foo'], { 'env': { 'NVIM_LISTEN_ADDRESS': v:servername  } })
 <
 

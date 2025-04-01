@@ -14,6 +14,7 @@
 #include "auto/config.h"
 #include "nvim/api/private/defs.h"
 #include "nvim/api/private/helpers.h"
+#include "nvim/api/ui.h"
 #include "nvim/arglist.h"
 #include "nvim/ascii_defs.h"
 #include "nvim/autocmd.h"
@@ -21,6 +22,7 @@
 #include "nvim/buffer.h"
 #include "nvim/buffer_defs.h"
 #include "nvim/change.h"
+#include "nvim/channel.h"
 #include "nvim/charset.h"
 #include "nvim/cmdexpand.h"
 #include "nvim/cmdexpand_defs.h"
@@ -67,6 +69,7 @@
 #include "nvim/message.h"
 #include "nvim/mouse.h"
 #include "nvim/move.h"
+#include "nvim/msgpack_rpc/server.h"
 #include "nvim/normal.h"
 #include "nvim/normal_defs.h"
 #include "nvim/ops.h"
@@ -403,6 +406,8 @@ int do_cmdline(char *cmdline, LineGetter fgetline, void *cookie, int flags)
   bool msg_didout_before_start = false;
   int count = 0;                        // line number count
   bool did_inc = false;                 // incremented RedrawingDisabled
+  int block_indent = -1;                // indent for ext_cmdline block event
+  char *block_line = NULL;              // block_line for ext_cmdline block event
   int retval = OK;
   cstack_T cstack = {                   // conditional stack
     .cs_idx = -1,
@@ -570,16 +575,20 @@ int do_cmdline(char *cmdline, LineGetter fgetline, void *cookie, int flags)
 
     // 2. If no line given, get an allocated line with fgetline().
     if (next_cmdline == NULL) {
-      // Need to set msg_didout for the first line after an ":if",
-      // otherwise the ":if" will be overwritten.
-      if (count == 1 && getline_equal(fgetline, cookie, getexline)) {
-        msg_didout = true;
+      int indent = cstack.cs_idx < 0 ? 0 : (cstack.cs_idx + 1) * 2;
+      if (count >= 1 && getline_equal(fgetline, cookie, getexline)) {
+        if (ui_has(kUICmdline)) {
+          char *line = block_line == last_cmdline ? "" : last_cmdline;
+          ui_ext_cmdline_block_append((size_t)MAX(0, block_indent), line);
+          block_line = last_cmdline;
+          block_indent = indent;
+        } else if (count == 1) {
+          // Need to set msg_didout for the first line after an ":if",
+          // otherwise the ":if" will be overwritten.
+          msg_didout = true;
+        }
       }
-      if (fgetline == NULL
-          || (next_cmdline = fgetline(':', cookie,
-                                      cstack.cs_idx <
-                                      0 ? 0 : (cstack.cs_idx + 1) * 2,
-                                      true)) == NULL) {
+      if (fgetline == NULL || (next_cmdline = fgetline(':', cookie, indent, true)) == NULL) {
         // Don't call wait_return() for aborted command line.  The NULL
         // returned for the end of a sourced file or executed function
         // doesn't do this.
@@ -677,8 +686,7 @@ int do_cmdline(char *cmdline, LineGetter fgetline, void *cookie, int flags)
 
       // If the command was typed, remember it for the ':' register.
       // Do this AFTER executing the command to make :@: work.
-      if (getline_equal(fgetline, cookie, getexline)
-          && new_last_cmdline != NULL) {
+      if (getline_equal(fgetline, cookie, getexline) && new_last_cmdline != NULL) {
         xfree(last_cmdline);
         last_cmdline = new_last_cmdline;
         new_last_cmdline = NULL;
@@ -936,6 +944,10 @@ int do_cmdline(char *cmdline, LineGetter fgetline, void *cookie, int flags)
     }
   }
 
+  if (block_indent >= 0) {
+    ui_ext_cmdline_block_leave();
+  }
+
   did_endif = false;    // in case do_cmdline used recursively
 
   do_cmdline_end();
@@ -982,7 +994,7 @@ void handle_did_throw(void)
   if (messages != NULL) {
     do {
       msglist_T *next = messages->next;
-      emsg_multiline(messages->msg, messages->multiline);
+      emsg_multiline(messages->msg, "emsg", HLF_E, messages->multiline);
       xfree(messages->msg);
       xfree(messages->sfile);
       xfree(messages);
@@ -1383,8 +1395,9 @@ static void parse_register(exarg_T *eap)
       // Do not allow register = for user commands
       && (!IS_USER_CMDIDX(eap->cmdidx) || *eap->arg != '=')
       && !((eap->argt & EX_COUNT) && ascii_isdigit(*eap->arg))) {
-    if (valid_yank_reg(*eap->arg, (eap->cmdidx != CMD_put
-                                   && !IS_USER_CMDIDX(eap->cmdidx)))) {
+    if (valid_yank_reg(*eap->arg,
+                       (!IS_USER_CMDIDX(eap->cmdidx)
+                        && eap->cmdidx != CMD_put && eap->cmdidx != CMD_iput))) {
       eap->regname = (uint8_t)(*eap->arg++);
       // for '=' register: accept the rest of the line as an expression
       if (eap->arg[-1] == '=' && eap->arg[0] != NUL) {
@@ -1742,7 +1755,7 @@ int execute_cmd(exarg_T *eap, CmdParseInfo *cmdinfo, bool preview)
 
   if (!MODIFIABLE(curbuf) && (eap->argt & EX_MODIFY)
       // allow :put in terminals
-      && !(curbuf->terminal && eap->cmdidx == CMD_put)) {
+      && !(curbuf->terminal && (eap->cmdidx == CMD_put || eap->cmdidx == CMD_iput))) {
     errormsg = _(e_modifiable);
     goto end;
   }
@@ -2145,7 +2158,7 @@ static char *do_one_cmd(char **cmdlinep, int flags, cstack_T *cstack, LineGetter
     }
     if (!MODIFIABLE(curbuf) && (ea.argt & EX_MODIFY)
         // allow :put in terminals
-        && (!curbuf->terminal || ea.cmdidx != CMD_put)) {
+        && !(curbuf->terminal && (ea.cmdidx == CMD_put || ea.cmdidx == CMD_iput))) {
       // Command not allowed in non-'modifiable' buffer
       errormsg = _(e_modifiable);
       goto doend;
@@ -5530,6 +5543,56 @@ static void ex_tabs(exarg_T *eap)
   }
 }
 
+/// ":detach"
+///
+/// Detaches the current UI.
+///
+/// ":detach!" with bang (!) detaches all UIs _except_ the current UI.
+static void ex_detach(exarg_T *eap)
+{
+  // come on pooky let's burn this mf down
+  if (eap && eap->forceit) {
+    emsg("bang (!) not supported yet");
+  } else {
+    // 1. (TODO) Send "detach" UI-event (notification only).
+    // 2. Perform server-side `nvim_ui_detach`.
+    // 3. Close server-side channel without self-exit.
+
+    if (!current_ui) {
+      emsg("UI not attached");
+      return;
+    }
+
+    Channel *chan = find_channel(current_ui);
+    if (!chan) {
+      emsg(e_invchan);
+      return;
+    }
+    chan->detach = true;  // Prevent self-exit on channel-close.
+
+    // Server-side UI detach. Doesn't close the channel.
+    Error err2 = ERROR_INIT;
+    nvim_ui_detach(chan->id, &err2);
+    if (ERROR_SET(&err2)) {
+      emsg(err2.msg);  // UI disappeared already?
+      api_clear_error(&err2);
+      return;
+    }
+
+    // Server-side channel close.
+    const char *err = NULL;
+    bool rv = channel_close(chan->id, kChannelPartAll, &err);
+    if (!rv && err) {
+      emsg(err);  // UI disappeared already?
+      return;
+    }
+    // XXX: Can't do this, channel_decref() is async...
+    // assert(!find_channel(chan->id));
+
+    ILOG("detach current_ui=%" PRId64, chan->id);
+  }
+}
+
 /// ":mode":
 /// If no argument given, get the screen size and redraw.
 static void ex_mode(exarg_T *eap)
@@ -6244,6 +6307,20 @@ static void ex_put(exarg_T *eap)
   check_cursor_col(curwin);
   do_put(eap->regname, NULL, eap->forceit ? BACKWARD : FORWARD, 1,
          PUT_LINE|PUT_CURSLINE);
+}
+
+/// ":iput".
+static void ex_iput(exarg_T *eap)
+{
+  // ":0iput" works like ":1iput!".
+  if (eap->line2 == 0) {
+    eap->line2 = 1;
+    eap->forceit = true;
+  }
+  curwin->w_cursor.lnum = eap->line2;
+  check_cursor_col(curwin);
+  do_put(eap->regname, NULL, eap->forceit ? BACKWARD : FORWARD, 1L,
+         PUT_LINE|PUT_CURSLINE|PUT_FIXINDENT);
 }
 
 /// Handle ":copy" and ":move".
@@ -7400,8 +7477,7 @@ char *eval_vars(char *src, const char *srcstart, size_t *usedlen, linenr_T *lnum
         *errormsg = _(e_usingsid);
         return NULL;
       }
-      snprintf(strbuf, sizeof(strbuf), "<SNR>%" PRIdSCID "_",
-               current_sctx.sc_sid);
+      snprintf(strbuf, sizeof(strbuf), "<SNR>%" PRIdSCID "_", current_sctx.sc_sid);
       result = strbuf;
       break;
 
@@ -7745,7 +7821,7 @@ static void ex_checkhealth(exarg_T *eap)
       emsg(_("E5009: Invalid 'runtimepath'"));
     }
   }
-  semsg_multiline(err.msg);
+  semsg_multiline("emsg", err.msg);
   api_clear_error(&err);
 }
 
