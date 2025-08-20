@@ -10,7 +10,6 @@
 #include "nvim/ascii_defs.h"
 #include "nvim/charset.h"
 #include "nvim/memory.h"
-#include "nvim/strings.h"
 #include "nvim/tui/terminfo.h"
 #include "nvim/tui/terminfo_defs.h"
 
@@ -18,9 +17,7 @@
 # include "nvim/os/os.h"
 #endif
 
-#ifdef INCLUDE_GENERATED_DECLARATIONS
-# include "tui/terminfo.c.generated.h"
-#endif
+#include "tui/terminfo.c.generated.h"
 
 bool terminfo_is_term_family(const char *term, const char *family)
 {
@@ -49,7 +46,7 @@ bool terminfo_is_bsd_console(const char *term)
 # if defined(__FreeBSD__)
   // FreeBSD console sets TERM=xterm, but it does not support xterm features
   // like cursor-shaping. Assume that TERM=xterm is degraded. #8644
-  return strequal(term, "xterm") && !!os_getenv("XTERM_VERSION");
+  return strequal(term, "xterm") && os_env_exists("XTERM_VERSION", true);
 # endif
 #endif
   return false;

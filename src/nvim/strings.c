@@ -35,9 +35,7 @@
 #include "nvim/types_defs.h"
 #include "nvim/vim_defs.h"
 
-#ifdef INCLUDE_GENERATED_DECLARATIONS
-# include "strings.c.generated.h"
-#endif
+#include "strings.c.generated.h"
 
 static const char e_cannot_mix_positional_and_non_positional_str[]
   = N_("E1500: Cannot mix positional and non-positional arguments: %s");
@@ -1027,7 +1025,7 @@ static void format_overflow_error(const char *pstart)
   xfree(argcopy);
 }
 
-enum { MAX_ALLOWED_STRING_WIDTH = 6400, };
+enum { MAX_ALLOWED_STRING_WIDTH = 1048576, };  // 1MiB
 
 static int get_unsigned_int(const char *pstart, const char **p, unsigned *uj, bool overflow_err)
 {

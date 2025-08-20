@@ -303,7 +303,7 @@ void ui_refresh(void)
   }
 }]]
 
-  it('allows to iterate over nodes children', function()
+  it('can iterate over nodes children', function()
     insert(test_text)
 
     local res = exec_lua(function()
@@ -337,7 +337,7 @@ void ui_refresh(void)
     exec_lua("vim.treesitter.get_parser(0, 'c')")
   end)
 
-  it('allows to get a child by field', function()
+  it('can get a child by field', function()
     insert(test_text)
 
     local res = exec_lua(function()
@@ -363,7 +363,7 @@ void ui_refresh(void)
     assert(res_fail)
   end)
 
-  it('supports getting text of multiline node', function()
+  it('can get text of multiline node', function()
     insert(test_text)
     local res = exec_lua(function()
       local parser = vim.treesitter.get_parser(0, 'c')
@@ -380,7 +380,7 @@ void ui_refresh(void)
     eq('void', res2)
   end)
 
-  it('supports getting text where start of node is one past EOF', function()
+  it('can get text where start of node is one past EOF', function()
     local text = [[
 def run
   a = <<~E
@@ -407,7 +407,7 @@ end]]
     )
   end)
 
-  it('supports getting empty text if node range is zero width', function()
+  it('can get empty text if node range is zero-width', function()
     local text = [[
 ```lua
 {}
@@ -429,7 +429,7 @@ end]]
     eq(true, result)
   end)
 
-  it('allows to set simple ranges', function()
+  it('can set simple ranges', function()
     insert(test_text)
 
     local res = exec_lua(function()
@@ -461,7 +461,7 @@ end]]
     eq({ { { 0, 0, 0, 17, 1, 508 } } }, range_tbl)
   end)
 
-  it('allows to set complex ranges', function()
+  it('can set complex ranges', function()
     insert(test_text)
 
     local res = exec_lua(function()
@@ -495,7 +495,7 @@ end]]
     }, res)
   end)
 
-  it('allows to create string parsers', function()
+  it('can create string parsers', function()
     local ret = exec_lua(function()
       local parser = vim.treesitter.get_string_parser('int foo = 42;', 'c')
       return { parser:parse()[1]:root():range() }
@@ -513,7 +513,7 @@ end]]
     eq({ 0, 0, 0, 13 }, ret)
   end)
 
-  it('allows to run queries with string parsers', function()
+  it('can run queries with string parsers', function()
     local txt = [[
       int foo = 42;
       int bar = 13;
@@ -535,7 +535,7 @@ end]]
     eq({ { 0, 10, 0, 13 } }, ret)
   end)
 
-  describe('when creating a language tree', function()
+  describe('creating a language tree', function()
     local function get_ranges()
       return exec_lua(function()
         local result = {}
@@ -557,8 +557,8 @@ int x = INT_MAX;
       ]])
     end)
 
-    describe('when parsing regions independently', function()
-      it('should inject a language', function()
+    describe('parsing regions independently', function()
+      it('injects a language', function()
         exec_lua(function()
           _G.parser = vim.treesitter.get_parser(0, 'c', {
             injections = {
@@ -575,28 +575,28 @@ int x = INT_MAX;
         eq(5, exec_lua('return #parser:children().c:trees()'))
         eq({
           { 0, 0, 7, 0 }, -- root tree
+          { 1, 26, 1, 63 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
+          { 2, 29, 2, 66 }, -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
           { 3, 14, 3, 17 }, -- VALUE 123
           { 4, 15, 4, 18 }, -- VALUE1 123
           { 5, 15, 5, 18 }, -- VALUE2 123
-          { 1, 26, 1, 63 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
-          { 2, 29, 2, 66 }, -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
         }, get_ranges())
 
         n.feed('ggo<esc>')
         eq(5, exec_lua('return #parser:children().c:trees()'))
         eq({
           { 0, 0, 8, 0 }, -- root tree
+          { 2, 26, 2, 63 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
+          { 3, 29, 3, 66 }, -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
           { 4, 14, 4, 17 }, -- VALUE 123
           { 5, 15, 5, 18 }, -- VALUE1 123
           { 6, 15, 6, 18 }, -- VALUE2 123
-          { 2, 26, 2, 63 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
-          { 3, 29, 3, 66 }, -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
         }, get_ranges())
       end)
     end)
 
     describe('when parsing regions combined', function()
-      it('should inject a language', function()
+      it('injects a language', function()
         exec_lua(function()
           _G.parser = vim.treesitter.get_parser(0, 'c', {
             injections = {
@@ -613,11 +613,11 @@ int x = INT_MAX;
         eq(2, exec_lua('return #parser:children().c:trees()'))
         eq({
           { 0, 0, 7, 0 }, -- root tree
+          { 1, 26, 2, 66 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
+          -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
           { 3, 14, 5, 18 }, -- VALUE 123
           -- VALUE1 123
           -- VALUE2 123
-          { 1, 26, 2, 66 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
-          -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
         }, get_ranges())
 
         n.feed('ggo<esc>')
@@ -625,11 +625,11 @@ int x = INT_MAX;
         eq(2, exec_lua('return #parser:children().c:trees()'))
         eq({
           { 0, 0, 8, 0 }, -- root tree
-          { 4, 14, 6, 18 }, -- VALUE 123
-          -- VALUE1 123
-          -- VALUE2 123
           { 2, 26, 3, 66 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
           -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
+          -- VALUE 123
+          { 4, 14, 6, 18 }, -- VALUE1 123
+          -- VALUE2 123
         }, get_ranges())
 
         n.feed('7ggI//<esc>')
@@ -638,10 +638,10 @@ int x = INT_MAX;
         eq(2, exec_lua('return #parser:children().c:trees()'))
         eq({
           { 0, 0, 8, 0 }, -- root tree
-          { 4, 14, 5, 18 }, -- VALUE 123
-          -- VALUE1 123
           { 2, 26, 3, 66 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
           -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
+          -- VALUE 123
+          { 4, 14, 5, 18 }, -- VALUE1 123
         }, get_ranges())
       end)
 
@@ -777,7 +777,7 @@ int x = INT_MAX;
     end)
 
     describe('when using injection.self', function()
-      it('should inject the source language', function()
+      it('injects the source language', function()
         exec_lua(function()
           _G.parser = vim.treesitter.get_parser(0, 'c', {
             injections = {
@@ -794,28 +794,28 @@ int x = INT_MAX;
         eq(5, exec_lua('return #parser:children().c:trees()'))
         eq({
           { 0, 0, 7, 0 }, -- root tree
+          { 1, 26, 1, 63 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
+          { 2, 29, 2, 66 }, -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
           { 3, 14, 3, 17 }, -- VALUE 123
           { 4, 15, 4, 18 }, -- VALUE1 123
           { 5, 15, 5, 18 }, -- VALUE2 123
-          { 1, 26, 1, 63 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
-          { 2, 29, 2, 66 }, -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
         }, get_ranges())
 
         n.feed('ggo<esc>')
         eq(5, exec_lua('return #parser:children().c:trees()'))
         eq({
           { 0, 0, 8, 0 }, -- root tree
+          { 2, 26, 2, 63 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
+          { 3, 29, 3, 66 }, -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
           { 4, 14, 4, 17 }, -- VALUE 123
           { 5, 15, 5, 18 }, -- VALUE1 123
           { 6, 15, 6, 18 }, -- VALUE2 123
-          { 2, 26, 2, 63 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
-          { 3, 29, 3, 66 }, -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
         }, get_ranges())
       end)
     end)
 
     describe('when using the offset directive', function()
-      it('should shift the range by the directive amount', function()
+      it('shifts the range by the directive amount', function()
         exec_lua(function()
           _G.parser = vim.treesitter.get_parser(0, 'c', {
             injections = {
@@ -831,14 +831,46 @@ int x = INT_MAX;
         eq('table', exec_lua('return type(parser:children().c)'))
         eq({
           { 0, 0, 7, 0 }, -- root tree
+          { 1, 26, 1, 63 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
+          { 2, 29, 2, 66 }, -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
           { 3, 16, 3, 16 }, -- VALUE 123
           { 4, 17, 4, 17 }, -- VALUE1 123
           { 5, 17, 5, 17 }, -- VALUE2 123
-          { 1, 26, 1, 63 }, -- READ_STRING(x, y) (char *)read_string((x), (size_t)(y))
-          { 2, 29, 2, 66 }, -- READ_STRING_OK(x, y) (char *)read_string((x), (size_t)(y))
         }, get_ranges())
       end)
-      it('should list all directives', function()
+      it('applies offsets to quantified captures', function()
+        local function get_ltree_ranges()
+          return exec_lua(function()
+            local result = {}
+            _G.parser:for_each_tree(function(_, ltree)
+              table.insert(result, ltree:included_regions())
+            end)
+            return result
+          end)
+        end
+
+        exec_lua(function()
+          _G.parser = vim.treesitter.get_parser(0, 'c', {
+            injections = {
+              c = '((preproc_def (preproc_arg) @injection.content)+ (#set! injection.language "c") (#offset! @injection.content 0 1 0 -1))',
+            },
+          })
+          _G.parser:parse(true)
+        end)
+
+        eq('table', exec_lua('return type(parser:children().c)'))
+        eq({
+          { {} }, -- root tree
+          {
+            {
+              { 3, 15, 163, 3, 16, 164 }, -- VALUE 123
+              { 4, 16, 182, 4, 17, 183 }, -- VALUE1 123
+              { 5, 16, 201, 5, 17, 202 }, -- VALUE2 123
+            },
+          },
+        }, get_ltree_ranges())
+      end)
+      it('lists all directives', function()
         local res_list = exec_lua(function()
           local query = vim.treesitter.query
 
@@ -854,6 +886,35 @@ int x = INT_MAX;
     end)
   end)
 
+  it('clips nested injections #34098', function()
+    insert([=[
+      ```lua
+      vim.cmd([[
+      set noswapfile
+      set noswapfile
+      set noswapfile
+      ]])
+      ```
+    ]=])
+
+    local result = exec_lua(function()
+      local parser = vim.treesitter.get_parser(0, 'markdown')
+      parser:parse(true)
+
+      return parser._children.lua._children.vim:included_regions()
+    end)
+
+    local expected = {
+      {
+        { 1, 10, 17, 2, 0, 18 },
+        { 2, 0, 18, 3, 0, 33 },
+        { 3, 0, 33, 4, 0, 48 },
+        { 4, 0, 48, 5, 0, 63 },
+      },
+    }
+    eq(expected, result)
+  end)
+
   describe('when getting the language for a range', function()
     before_each(function()
       insert([[
@@ -862,7 +923,7 @@ int x = INT_MAX;
       ]])
     end)
 
-    it('should return the correct language tree', function()
+    it('returns the correct language tree', function()
       local result = exec_lua(function()
         local parser = vim.treesitter.get_parser(0, 'c', {
           injections = {
@@ -912,7 +973,7 @@ print()
 
   describe('when getting/setting match data', function()
     describe('when setting for the whole match', function()
-      it('should set/get the data correctly', function()
+      it('sets/gets the data correctly', function()
         insert([[
           int x = 3;
         ]])
@@ -930,7 +991,7 @@ print()
       end)
 
       describe('when setting a key on a capture', function()
-        it('it should create the nested table', function()
+        it('creates the nested table', function()
           insert([[
             int x = 3;
           ]])
@@ -950,7 +1011,7 @@ print()
           eq('value', result)
         end)
 
-        it('it should not overwrite the nested table', function()
+        it('does not overwrite the nested table', function()
           insert([[
             int x = 3;
           ]])
@@ -1206,7 +1267,7 @@ print()
     eq({ { { 1, 0, 21, 2, 0, 42 } } }, exec_lua('return parser2:children().lua:included_regions()'))
   end)
 
-  it('parsers injections incrementally', function()
+  it('parses injections incrementally', function()
     insert(dedent [[
       >lua
         local a = {}
@@ -1349,7 +1410,7 @@ print()
       end)
 
       it(
-        'is valid excluding, invalid including children after a range parse that does not lead to parsing not parsed injections',
+        'is valid excluding, invalid including children after a range parse that does not lead to parsing non-parsed injections',
         function()
           exec_lua('vim.treesitter.get_parser():parse({2, 4})')
           eq(true, exec_lua('return vim.treesitter.get_parser():is_valid(true)'))

@@ -1,11 +1,11 @@
 " These commands create the option window.
 "
 " Maintainer:	The Vim Project <https://github.com/vim/vim>
-" Last Change:	2025 Feb 08
+" Last Change:	2025 Aug 07
 " Former Maintainer:	Bram Moolenaar <Bram@vim.org>
 
 " If there already is an option window, jump to that one.
-let buf = bufnr('option-window')
+let buf = bufexists('option-window') ? bufnr('option-window') : -1
 if buf >= 0
   let winids = win_findbuf(buf)
   if len(winids) > 0
@@ -261,6 +261,8 @@ call <SID>AddOption("ignorecase", gettext("ignore case when using a search patte
 call <SID>BinOptionG("ic", &ic)
 call <SID>AddOption("smartcase", gettext("override 'ignorecase' when pattern has upper case characters"))
 call <SID>BinOptionG("scs", &scs)
+call <SID>AddOption("maxsearchcount", gettext("maximum number for the search count feature"))
+call <SID>OptionG("msc", &msc)
 call <SID>AddOption("casemap", gettext("what method to use for changing case of letters"))
 call <SID>OptionG("cmp", &cmp)
 call <SID>AddOption("maxmempattern", gettext("maximum amount of memory in Kbyte used for pattern matching"))
@@ -333,7 +335,7 @@ call <SID>AddOption("sidescrolloff", gettext("minimal number of columns to keep 
 call append("$", " \tset siso=" . &siso)
 call <SID>AddOption("display", gettext("include \"lastline\" to show the last line even if it doesn't fit\ninclude \"uhex\" to show unprintable characters as a hex number"))
 call <SID>OptionG("dy", &dy)
-call <SID>AddOption("fillchars", gettext("characters to use for the status line, folds and filler lines"))
+call <SID>AddOption("fillchars", gettext("characters to use for the status line, folds, diffs, buffer text, filler lines and truncation in the completion menu"))
 call <SID>OptionG("fcs", &fcs)
 call <SID>AddOption("cmdheight", gettext("number of lines used for the command-line"))
 call append("$", " \tset ch=" . &ch)
@@ -366,6 +368,13 @@ if has("linebreak")
   call <SID>AddOption("numberwidth", gettext("number of columns to use for the line number"))
   call append("$", "\t" .. s:local_to_window)
   call <SID>OptionL("nuw")
+endif
+if has("quickfix")
+  call <SID>AddOption("chistory", gettext("maximum number of quickfix lists that can be stored in history"))
+  call <SID>OptionL("chi")
+  call <SID>AddOption("lhistory", gettext("maximum number of location lists that can be stored in history"))
+  call append("$", "\t" .. s:local_to_window)
+  call <SID>OptionL("lhi")
 endif
 if has("conceal")
   call <SID>AddOption("conceallevel", gettext("controls whether concealable text is hidden"))
@@ -726,14 +735,24 @@ if has("insert_expand")
   call <SID>AddOption("complete", gettext("specifies how Insert mode completion works for CTRL-N and CTRL-P"))
   call append("$", "\t" .. s:local_to_buffer)
   call <SID>OptionL("cpt")
+  call <SID>AddOption("autocomplete", gettext("automatic completion in insert mode"))
+  call <SID>BinOptionG("ac", &ac)
   call <SID>AddOption("completeopt", gettext("whether to use a popup menu for Insert mode completion"))
   call <SID>OptionL("cot")
   call <SID>AddOption("completeitemalign", gettext("popup menu item align order"))
   call <SID>OptionG("cia", &cia)
+  call <SID>AddOption("completefuzzycollect", gettext("use fuzzy collection for specific completion modes"))
+  call <SID>OptionL("cfc")
+  if exists("+completepopup")
+    call <SID>AddOption("completepopup", gettext("options for the Insert mode completion info popup"))
+    call <SID>OptionG("cpp", &cpp)
+  endif
   call <SID>AddOption("pumheight", gettext("maximum height of the popup menu"))
   call <SID>OptionG("ph", &ph)
   call <SID>AddOption("pumwidth", gettext("minimum width of the popup menu"))
   call <SID>OptionG("pw", &pw)
+  call <SID>AddOption("pummaxwidth", gettext("maximum width of the popup menu"))
+  call <SID>OptionG("pmw", &pmw)
   call <SID>AddOption("completefunc", gettext("user defined function for Insert mode completion"))
   call append("$", "\t" .. s:local_to_buffer)
   call <SID>OptionL("cfu")
@@ -900,6 +919,9 @@ if has("diff")
   call <SID>OptionG("dip", &dip)
   call <SID>AddOption("diffexpr", gettext("expression used to obtain a diff file"))
   call <SID>OptionG("dex", &dex)
+  call <SID>AddOption("diffanchors", gettext("list of addresses for anchoring a diff"))
+  call append("$", "\t" .. s:global_or_local)
+  call <SID>OptionG("dia", &dia)
   call <SID>AddOption("patchexpr", gettext("expression used to patch a file"))
   call <SID>OptionG("pex", &pex)
 endif
@@ -1091,6 +1113,8 @@ call <SID>AddOption("isfname", gettext("specifies the characters in a file name"
 call <SID>OptionG("isf", &isf)
 call <SID>AddOption("isident", gettext("specifies the characters in an identifier"))
 call <SID>OptionG("isi", &isi)
+call <SID>AddOption("isexpand", gettext("defines trigger strings for complete_match()"))
+call append("$", "\t" .. s:local_to_buffer)
 call <SID>AddOption("iskeyword", gettext("specifies the characters in a keyword"))
 call append("$", "\t" .. s:local_to_buffer)
 call <SID>OptionL("isk")

@@ -37,9 +37,7 @@ static char log_file_path[MAXPATHL + 1] = { 0 };
 static bool did_log_init = false;
 static uv_mutex_t mutex;
 
-#ifdef INCLUDE_GENERATED_DECLARATIONS
-# include "log.c.generated.h"
-#endif
+#include "log.c.generated.h"
 
 #ifdef HAVE_EXECINFO_BACKTRACE
 # include <execinfo.h>
@@ -336,7 +334,7 @@ static bool v_do_log_to_file(FILE *log_file, int log_level, const char *context,
   // TODO(justinmk): expose this as v:name ?
   if (regen) {
     // Parent servername ($NVIM).
-    const char *parent = path_tail(os_getenv(ENV_NVIM));
+    const char *parent = path_tail(os_getenv_noalloc(ENV_NVIM));
     // Servername. Empty until starting=false.
     const char *serv = path_tail(get_vim_var_str(VV_SEND_SERVER));
     if (parent[0] != NUL) {

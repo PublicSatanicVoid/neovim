@@ -42,9 +42,7 @@ enum {
 # undef gen_expand_wildcards
 #endif
 
-#ifdef INCLUDE_GENERATED_DECLARATIONS
-# include "path.c.generated.h"
-#endif
+#include "path.c.generated.h"
 
 /// Compare two file names.
 ///
@@ -2392,7 +2390,7 @@ bool path_is_absolute(const char *fname)
 void path_guess_exepath(const char *argv0, char *buf, size_t bufsize)
   FUNC_ATTR_NONNULL_ALL
 {
-  const char *path = os_getenv("PATH");
+  char *path = os_getenv("PATH");
 
   if (path == NULL || path_is_absolute(argv0)) {
     xstrlcpy(buf, argv0, bufsize);
@@ -2427,4 +2425,5 @@ void path_guess_exepath(const char *argv0, char *buf, size_t bufsize)
     // Not found in $PATH, fall back to argv0.
     xstrlcpy(buf, argv0, bufsize);
   }
+  xfree(path);
 }

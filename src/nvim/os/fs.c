@@ -60,9 +60,7 @@
 # include "nvim/strings.h"
 #endif
 
-#ifdef INCLUDE_GENERATED_DECLARATIONS
-# include "os/fs.c.generated.h"
-#endif
+#include "os/fs.c.generated.h"
 
 #ifdef HAVE_XATTR
 static const char e_xattr_erange[]
@@ -245,14 +243,12 @@ bool os_can_exe(const char *name, char **abspath, bool use_path)
 {
   if (!use_path || gettail_dir(name) != name) {
 #ifdef MSWIN
-    if (is_executable_ext(name, abspath)) {
+    return is_executable_ext(name, abspath);
 #else
     // Must have path separator, cannot execute files in the current directory.
-    if ((use_path || gettail_dir(name) != name)
-        && is_executable(name, abspath)) {
+    return ((use_path || gettail_dir(name) != name)
+            && is_executable(name, abspath));
 #endif
-      return true;
-    }
     return false;
   }
 
@@ -303,7 +299,7 @@ static bool is_executable_ext(const char *name, char **abspath)
   size_t nameext_len = nameext ? strlen(nameext) : 0;
   xstrlcpy(os_buf, name, sizeof(os_buf));
   char *buf_end = xstrchrnul(os_buf, NUL);
-  const char *pathext = os_getenv("PATHEXT");
+  const char *pathext = os_getenv_noalloc("PATHEXT");
   if (!pathext) {
     pathext = ".com;.exe;.bat;.cmd";
   }
@@ -339,6 +335,8 @@ static bool is_executable_ext(const char *name, char **abspath)
   }
   return false;
 }
+#else
+# define is_executable_ext is_executable
 #endif
 
 /// Checks if a file is in `$PATH` and is executable.
@@ -350,14 +348,14 @@ static bool is_executable_ext(const char *name, char **abspath)
 static bool is_executable_in_path(const char *name, char **abspath)
   FUNC_ATTR_NONNULL_ARG(1)
 {
-  const char *path_env = os_getenv("PATH");
+  char *path_env = os_getenv("PATH");
   if (path_env == NULL) {
     return false;
   }
 
 #ifdef MSWIN
   char *path = NULL;
-  if (!os_env_exists("NoDefaultCurrentDirectoryInExePath")) {
+  if (!os_env_exists("NoDefaultCurrentDirectoryInExePath", false)) {
     // Prepend ".;" to $PATH.
     size_t pathlen = strlen(path_env);
     path = xmallocz(pathlen + 2);
@@ -384,11 +382,7 @@ static bool is_executable_in_path(const char *name, char **abspath)
     xmemcpyz(buf, p, (size_t)(e - p));
     (void)append_path(buf, name, bufsize);
 
-#ifdef MSWIN
     if (is_executable_ext(buf, abspath)) {
-#else
-    if (is_executable(buf, abspath)) {
-#endif
       rv = true;
       goto end;
     }
@@ -404,6 +398,7 @@ static bool is_executable_in_path(const char *name, char **abspath)
 end:
   xfree(buf);
   xfree(path);
+  xfree(path_env);
   return rv;
 }
 

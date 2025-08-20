@@ -1,5 +1,5 @@
 local M = {}
-local min_version = '3.7'
+local min_version = '3.9'
 local s_err ---@type string?
 local s_host ---@type string?
 
@@ -81,6 +81,10 @@ function M.detect_by_module(module)
 
   if python_exe ~= '' then
     return vim.fn.exepath(vim.fn.expand(python_exe, true)), nil
+  end
+
+  if vim.fn.executable('pynvim-python') == 1 then
+    return 'pynvim-python'
   end
 
   local errors = {}

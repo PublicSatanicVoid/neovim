@@ -367,6 +367,8 @@ static const char e_nfa_regexp_missing_value_in_chr[]
 static const char e_atom_engine_must_be_at_start_of_pattern[]
   = N_("E1281: Atom '\\%%#=%c' must be at the start of the pattern");
 static const char e_substitute_nesting_too_deep[] = N_("E1290: substitute nesting too deep");
+static const char e_unicode_val_too_large[]
+  = N_("E1541: Value too large, max Unicode codepoint is U+10FFFF");
 
 #define NOT_MULTI       0
 #define MULTI_ONE       1
@@ -643,9 +645,7 @@ typedef struct {
 static regengine_T bt_regengine;
 static regengine_T nfa_regengine;
 
-#ifdef INCLUDE_GENERATED_DECLARATIONS
-# include "regexp.c.generated.h"
-#endif
+#include "regexp.c.generated.h"
 
 // Return true if compiled regular expression "prog" can match a line break.
 int re_multiline(const regprog_T *prog)
@@ -1727,7 +1727,8 @@ static void mb_decompose(int c, int *c1, int *c2, int *c3)
     *c3 = d.c;
   } else {
     *c1 = c;
-    *c2 = *c3 = 0;
+    *c2 = 0;
+    *c3 = 0;
   }
 }
 
@@ -4796,6 +4797,11 @@ collection:
                        || *regparse == 'u'
                        || *regparse == 'U') {
               startc = coll_get_char();
+              // max UTF-8 Codepoint is U+10FFFF,
+              // but allow values until INT_MAX
+              if (startc == INT_MAX) {
+                EMSG_RET_NULL(_(e_unicode_val_too_large));
+              }
               if (startc == 0) {
                 regc(0x0a);
               } else {
@@ -5548,11 +5554,14 @@ static int coll_get_char(void)
   case 'U':
     nr = gethexchrs(8); break;
   }
-  if (nr < 0 || nr > INT_MAX) {
+  if (nr < 0) {
     // If getting the number fails be backwards compatible: the character
     // is a backslash.
     regparse--;
     nr = '\\';
+  }
+  if (nr > INT_MAX) {
+    nr = INT_MAX;
   }
   return (int)nr;
 }
@@ -10565,6 +10574,11 @@ collection:
                      || *regparse == 'U') {
             // TODO(RE): This needs more testing
             startc = coll_get_char();
+            // max UTF-8 Codepoint is U+10FFFF,
+            // but allow values until INT_MAX
+            if (startc == INT_MAX) {
+              EMSG_RET_FAIL(_(e_unicode_val_too_large));
+            }
             got_coll_char = true;
             MB_PTR_BACK(old_regparse, regparse);
           } else {

@@ -82,7 +82,7 @@
 #define DEFAULT_ENCODE_INVALID_NUMBERS 0
 #define DEFAULT_DECODE_INVALID_NUMBERS 1
 #define DEFAULT_ENCODE_KEEP_BUFFER 1
-#define DEFAULT_ENCODE_NUMBER_PRECISION 14
+#define DEFAULT_ENCODE_NUMBER_PRECISION 16
 #define DEFAULT_ENCODE_EMPTY_TABLE_AS_OBJECT 0
 #define DEFAULT_DECODE_ARRAY_WITH_ARRAY_MT 0
 #define DEFAULT_ENCODE_ESCAPE_FORWARD_SLASH 1
@@ -844,7 +844,7 @@ static void json_append_object(lua_State *l, json_encode_t *ctx,
     strbuf_append_char(json, '}');
 }
 
-/* Serialise Lua data into JSON string. Return 1 if error an error happend, else 0 */
+/* Serialise Lua data into JSON string. Return 1 if an error happened, else 0. */
 static int json_append_data(lua_State *l, json_encode_t *ctx,
                              int current_depth)
 {

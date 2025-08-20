@@ -72,11 +72,14 @@ local new_layout = {
   ['gui.txt'] = true,
   ['intro.txt'] = true,
   ['lua.txt'] = true,
+  ['lua-guide.txt'] = true,
   ['luaref.txt'] = true,
   ['news.txt'] = true,
   ['news-0.9.txt'] = true,
   ['news-0.10.txt'] = true,
+  ['news-0.11.txt'] = true,
   ['nvim.txt'] = true,
+  ['pack.txt'] = true,
   ['provider.txt'] = true,
   ['tui.txt'] = true,
   ['ui.txt'] = true,
@@ -86,13 +89,14 @@ local new_layout = {
 -- Map of new:old pages, to redirect renamed pages.
 local redirects = {
   ['credits'] = 'backers',
-  ['tui'] = 'term',
   ['terminal'] = 'nvim_terminal_emulator',
+  ['tui'] = 'term',
+  ['api-ui-events'] = 'ui',
 }
 
 -- TODO: These known invalid |links| require an update to the relevant docs.
 local exclude_invalid = {
-  ["'string'"] = 'eval.txt',
+  ["'string'"] = 'vimeval.txt',
   Query = 'treesitter.txt',
   matchit = 'vim_diff.txt',
   ['set!'] = 'treesitter.txt',
@@ -604,8 +608,8 @@ local function visit_node(root, level, lang_tree, headings, opt, stats)
     return string.format('<div class="help-li" style="%s">%s</div>', margin, text)
   elseif node_name == 'taglink' or node_name == 'optionlink' then
     local helppage, tagname, ignored = validate_link(root, opt.buf, opt.fname)
-    if ignored then
-      return text
+    if ignored or not helppage then
+      return html_esc(node_text(root))
     end
     local s = ('%s<a href="%s#%s">%s</a>'):format(
       ws(),
@@ -1341,7 +1345,10 @@ This document moved to: |%s|
       local redirect_to = ('%s/%s'):format(to_dir, get_helppage(redirect_from))
       local redirect_html, _ =
         gen_one(redirect_from, redirect_text, redirect_to, false, commit or '?', parser_path)
-      assert(redirect_html:find(helpfile_tag))
+      assert(
+        redirect_html:find(vim.pesc(helpfile_tag)),
+        ('not found in redirect html: %s'):format(helpfile_tag)
+      )
       tofile(redirect_to, redirect_html)
 
       print(

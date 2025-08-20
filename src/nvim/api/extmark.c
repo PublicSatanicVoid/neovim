@@ -32,9 +32,7 @@
 #include "nvim/pos_defs.h"
 #include "nvim/sign.h"
 
-#ifdef INCLUDE_GENERATED_DECLARATIONS
-# include "api/extmark.c.generated.h"
-#endif
+#include "api/extmark.c.generated.h"
 
 void api_extmark_free_all_mem(void)
 {
@@ -75,7 +73,7 @@ Integer nvim_create_namespace(String name)
 /// Gets existing, non-anonymous |namespace|s.
 ///
 /// @return dict that maps from names to namespace ids.
-Dict nvim_get_namespaces(Arena *arena)
+DictOf(Integer) nvim_get_namespaces(Arena *arena)
   FUNC_API_SINCE(5)
 {
   Dict retval = arena_dict(arena, map_size(&namespace_ids));
@@ -201,9 +199,9 @@ static Array extmark_to_array(MTPair extmark, bool id, bool add_dict, bool hl_na
 /// @param[out] err   Error details, if any
 /// @return 0-indexed (row, col) tuple or empty list () if extmark id was
 /// absent
-ArrayOf(Integer) nvim_buf_get_extmark_by_id(Buffer buffer, Integer ns_id,
-                                            Integer id, Dict(get_extmark) *opts,
-                                            Arena *arena, Error *err)
+Tuple(Integer, Integer, *DictAs(extmark_details))
+nvim_buf_get_extmark_by_id(Buffer buffer, Integer ns_id, Integer id, Dict(get_extmark) * opts,
+                           Arena *arena, Error *err)
   FUNC_API_SINCE(7)
 {
   Array rv = ARRAY_DICT_INIT;
@@ -241,8 +239,11 @@ ArrayOf(Integer) nvim_buf_get_extmark_by_id(Buffer buffer, Integer ns_id,
 /// vim.api.nvim_buf_get_extmarks(0, my_ns, {0,0}, {-1,-1}, {})
 /// ```
 ///
-/// If `end` is less than `start`, traversal works backwards. (Useful
-/// with `limit`, to get the first marks prior to a given position.)
+/// If `end` is less than `start`, marks are returned in reverse order.
+/// (Useful with `limit`, to get the first marks prior to a given position.)
+///
+/// Note: For a reverse range, `limit` does not actually affect the traversed
+/// range, just how many marks are returned
 ///
 /// Note: when using extmark ranges (marks with a end_row/end_col position)
 /// the `overlap` option might be useful. Otherwise only the start position
@@ -284,8 +285,10 @@ ArrayOf(Integer) nvim_buf_get_extmark_by_id(Buffer buffer, Integer ns_id,
 ///          - type: Filter marks by type: "highlight", "sign", "virt_text" and "virt_lines"
 /// @param[out] err   Error details, if any
 /// @return List of `[extmark_id, row, col]` tuples in "traversal order".
-Array nvim_buf_get_extmarks(Buffer buffer, Integer ns_id, Object start, Object end,
-                            Dict(get_extmarks) *opts, Arena *arena, Error *err)
+ArrayOf(DictAs(get_extmark_item)) nvim_buf_get_extmarks(Buffer buffer, Integer ns_id, Object start,
+                                                        Object end,
+                                                        Dict(get_extmarks) *opts, Arena *arena,
+                                                        Error *err)
   FUNC_API_SINCE(7)
 {
   Array rv = ARRAY_DICT_INIT;
@@ -327,8 +330,6 @@ Array nvim_buf_get_extmarks(Buffer buffer, Integer ns_id, Object start, Object e
     limit = INT64_MAX;
   }
 
-  bool reverse = false;
-
   int l_row;
   colnr_T l_col;
   if (!extmark_get_index_from_obj(buf, ns_id, start, &l_row, &l_col, err)) {
@@ -341,17 +342,31 @@ Array nvim_buf_get_extmarks(Buffer buffer, Integer ns_id, Object start, Object e
     return rv;
   }
 
-  if (l_row > u_row || (l_row == u_row && l_col > u_col)) {
-    reverse = true;
+  size_t rv_limit = (size_t)limit;
+  bool reverse = l_row > u_row || (l_row == u_row && l_col > u_col);
+  if (reverse) {
+    limit = INT64_MAX;  // limit the return value instead
+    int row = l_row;
+    l_row = u_row;
+    u_row = row;
+    colnr_T col = l_col;
+    l_col = u_col;
+    u_col = col;
   }
 
   // note: ns_id=-1 allowed, represented as UINT32_MAX
   ExtmarkInfoArray marks = extmark_get(buf, (uint32_t)ns_id, l_row, l_col, u_row,
-                                       u_col, (int64_t)limit, reverse, type, opts->overlap);
+                                       u_col, (int64_t)limit, type, opts->overlap);
 
-  rv = arena_array(arena, kv_size(marks));
-  for (size_t i = 0; i < kv_size(marks); i++) {
-    ADD_C(rv, ARRAY_OBJ(extmark_to_array(kv_A(marks, i), true, details, hl_name, arena)));
+  rv = arena_array(arena, MIN(kv_size(marks), rv_limit));
+  if (reverse) {
+    for (int i = (int)kv_size(marks) - 1; i >= 0 && kv_size(rv) < rv_limit; i--) {
+      ADD_C(rv, ARRAY_OBJ(extmark_to_array(kv_A(marks, i), true, details, hl_name, arena)));
+    }
+  } else {
+    for (size_t i = 0; i < kv_size(marks); i++) {
+      ADD_C(rv, ARRAY_OBJ(extmark_to_array(kv_A(marks, i), true, details, hl_name, arena)));
+    }
   }
 
   kv_destroy(marks);
@@ -392,7 +407,7 @@ Array nvim_buf_get_extmarks(Buffer buffer, Integer ns_id, Object start, Object e
 ///                          EOL of a line, continue the highlight for the rest
 ///                          of the screen line (just like for diff and
 ///                          cursorline highlight).
-///               - virt_text : virtual text to link to this mark.
+///               - virt_text : [](virtual-text) to link to this mark.
 ///                   A list of `[text, highlight]` tuples, each representing a
 ///                   text chunk with specified highlight. `highlight` element
 ///                   can either be a single highlight group, or an array of

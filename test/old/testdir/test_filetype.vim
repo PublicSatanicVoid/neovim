@@ -126,6 +126,7 @@ func s:GetFilenameChecks() abort
     \ 'autohotkey': ['file.ahk'],
     \ 'autoit': ['file.au3'],
     \ 'automake': ['GNUmakefile.am', 'makefile.am', 'Makefile.am'],
+    \ 'autopkgtest': ['/debian/tests/control', 'any/debian/tests/control'],
     \ 'ave': ['file.ave'],
     \ 'awk': ['file.awk', 'file.gawk'],
     \ 'b': ['file.mch', 'file.ref', 'file.imp'],
@@ -142,6 +143,8 @@ func s:GetFilenameChecks() abort
     \ 'blank': ['file.bl'],
     \ 'blueprint': ['file.blp'],
     \ 'bp': ['Android.bp'],
+    \ 'brighterscript': ['file.bs'],
+    \ 'brightscript': ['file.brs'],
     \ 'bsdl': ['file.bsd', 'file.bsdl'],
     \ 'bst': ['file.bst'],
     \ 'bzl': ['file.bazel', 'file.bzl', 'WORKSPACE', 'WORKSPACE.bzlmod'],
@@ -153,6 +156,7 @@ func s:GetFilenameChecks() abort
     \ 'cabalproject': ['cabal.project', 'cabal.project.local'],
     \ 'cairo': ['file.cairo'],
     \ 'calendar': ['calendar', '/.calendar/file', '/share/calendar/any/calendar.file', '/share/calendar/calendar.file', 'any/share/calendar/any/calendar.file', 'any/share/calendar/calendar.file'],
+    \ 'cangjie': ['file.cj'],
     \ 'capnp': ['file.capnp'],
     \ 'catalog': ['catalog', 'sgml.catalogfile', 'sgml.catalog', 'sgml.catalog-file'],
     \ 'cdc': ['file.cdc'],
@@ -181,14 +185,15 @@ func s:GetFilenameChecks() abort
     \ 'cobol': ['file.cbl', 'file.cob'],
     \ 'coco': ['file.atg'],
     \ 'conaryrecipe': ['file.recipe'],
-    \ 'conf': ['auto.master', 'file.conf', 'texdoc.cnf', '.x11vncrc', '.chktexrc', '.ripgreprc', 'ripgreprc', 'file.ctags', '.mbsyncrc'],
+    \ 'conf': ['auto.master', 'file.conf', 'texdoc.cnf', '.x11vncrc', '.chktexrc', '.ripgreprc', 'ripgreprc', 'file.ctags'],
     \ 'config': ['configure.in', 'configure.ac', '/etc/hostname.file', 'any/etc/hostname.file'],
-    \ 'confini': ['pacman.conf', 'paru.conf', 'mpv.conf', 'any/.aws/config', 'any/.aws/credentials', 'file.nmconnection'],
+    \ 'confini': ['pacman.conf', 'paru.conf', 'mpv.conf', 'any/.aws/config', 'any/.aws/credentials', 'file.nmconnection',
+    \             'any/.gnuradio/grc.conf', 'any/gnuradio/config.conf', 'any/gnuradio/conf.d/modtool.conf'],
     \ 'context': ['tex/context/any/file.tex', 'file.mkii', 'file.mkiv', 'file.mkvi', 'file.mkxl', 'file.mklx'],
     \ 'cook': ['file.cook'],
     \ 'corn': ['file.corn'],
     \ 'cpon': ['file.cpon'],
-    \ 'cpp': ['file.cxx', 'file.c++', 'file.hh', 'file.hxx', 'file.hpp', 'file.ipp', 'file.moc', 'file.tcc', 'file.inl', 'file.tlh', 'file.cppm', 'file.ccm', 'file.cxxm', 'file.c++m'],
+    \ 'cpp': ['file.cxx', 'file.c++', 'file.hh', 'file.hxx', 'file.hpp', 'file.ipp', 'file.ixx', 'file.moc', 'file.tcc', 'file.inl', 'file.tlh', 'file.cppm', 'file.ccm', 'file.cxxm', 'file.c++m', 'file.mpp'],
     \ 'cqlang': ['file.cql'],
     \ 'crm': ['file.crm'],
     \ 'crontab': ['crontab', 'crontab.file', '/etc/cron.d/file', 'any/etc/cron.d/file'],
@@ -213,6 +218,7 @@ func s:GetFilenameChecks() abort
     \ 'dafny': ['file.dfy'],
     \ 'dart': ['file.dart', 'file.drt'],
     \ 'datascript': ['file.ds'],
+    \ 'dax': ['file.dax'],
     \ 'dcd': ['file.dcd'],
     \ 'deb822sources': ['/etc/apt/sources.list.d/file.sources', 'any/etc/apt/sources.list.d/file.sources'],
     \ 'debchangelog': ['changelog.Debian', 'changelog.dch', 'NEWS.Debian', 'NEWS.dch', '/debian/changelog'],
@@ -238,7 +244,9 @@ func s:GetFilenameChecks() abort
     \            '.coveragerc', '.pypirc', '.gitlint', '.oelint.cfg', 'pylintrc', '.pylintrc',
     \            '/home/user/.config/bpython/config', '/home/user/.config/mypy/config', '.wakatime.cfg', '.replyrc',
     \            'psprint.conf', 'sofficerc', 'any/.config/lxqt/globalkeyshortcuts.conf', 'any/.config/screengrab/screengrab.conf',
-    \            'any/.local/share/flatpak/repo/config', '.notmuch-config', '.notmuch-config.myprofile',
+    \            'any/.local/share/flatpak/repo/config',
+    \            '.alsoftrc', 'alsoft.conf', 'alsoft.ini', 'alsoftrc.sample',
+    \            '.notmuch-config', '.notmuch-config.myprofile',
     \            '~/.config/notmuch/myprofile/config'] + s:WhenConfigHome('$XDG_CONFIG_HOME/notmuch/myprofile/config'),
     \ 'dot': ['file.dot', 'file.gv'],
     \ 'dracula': ['file.drac', 'file.drc', 'file.lvs', 'file.lpe', 'drac.file'],
@@ -278,9 +286,11 @@ func s:GetFilenameChecks() abort
     \ 'faust': ['file.dsp', 'file.lib'],
     \ 'fennel': ['file.fnl', '.fennelrc', 'fennelrc'],
     \ 'fetchmail': ['.fetchmailrc'],
+    \ 'fga': ['file.fga'],
     \ 'fgl': ['file.4gl', 'file.4gh', 'file.m4gl'],
     \ 'firrtl': ['file.fir'],
     \ 'fish': ['file.fish'],
+    \ 'flix': ['file.flix'],
     \ 'focexec': ['file.fex', 'file.focexec'],
     \ 'form': ['file.frm'],
     \ 'forth': ['file.ft', 'file.fth', 'file.4th'],
@@ -294,7 +304,7 @@ func s:GetFilenameChecks() abort
     \ 'func': ['file.fc'],
     \ 'fusion': ['file.fusion'],
     \ 'fvwm': ['/.fvwm/file', 'any/.fvwm/file'],
-    \ 'gdb': ['.gdbinit', 'gdbinit', 'file.gdb', '.config/gdbearlyinit', '.gdbearlyinit'],
+    \ 'gdb': ['.gdbinit', 'gdbinit', '.cuda-gdbinit', 'cuda-gdbinit', 'file.gdb', '.config/gdbearlyinit', '.gdbearlyinit'],
     \ 'gdmo': ['file.mo', 'file.gdmo'],
     \ 'gdresource': ['file.tscn', 'file.tres'],
     \ 'gdscript': ['file.gd'],
@@ -341,6 +351,7 @@ func s:GetFilenameChecks() abort
     \ 'haskellpersistent': ['file.persistentmodels'],
     \ 'haste': ['file.ht'],
     \ 'hastepreproc': ['file.htpp'],
+    \ 'haxe': ['file.hx'],
     \ 'hb': ['file.hb'],
     \ 'hcl': ['file.hcl'],
     \ 'heex': ['file.heex'],
@@ -391,9 +402,9 @@ func s:GetFilenameChecks() abort
     \ 'jovial': ['file.jov', 'file.j73', 'file.jovial'],
     \ 'jproperties': ['file.properties', 'file.properties_xx', 'file.properties_xx_xx', 'some.properties_xx_xx_file', 'org.eclipse.xyz.prefs'],
     \ 'jq': ['file.jq'],
-    \ 'json': ['file.json', 'file.jsonp', 'file.json-patch', 'file.geojson', 'file.webmanifest', 'Pipfile.lock', 'file.ipynb', 'file.jupyterlab-settings', '.prettierrc', '.firebaserc', '.stylelintrc', '.lintstagedrc', 'file.slnf', 'file.sublime-project', 'file.sublime-settings', 'file.sublime-workspace', 'file.bd', 'file.bda', 'file.xci', 'flake.lock', 'pack.mcmeta', 'deno.lock', '.swcrc'],
+    \ 'json': ['file.json', 'file.jsonp', 'file.json-patch', 'file.geojson', 'file.webmanifest', 'Pipfile.lock', 'file.ipynb', 'file.jupyterlab-settings', '.prettierrc', '.firebaserc', '.stylelintrc', '.lintstagedrc', 'file.slnf', 'file.sublime-project', 'file.sublime-settings', 'file.sublime-workspace', 'file.bd', 'file.bda', 'file.xci', 'flake.lock', 'pack.mcmeta', 'deno.lock', '.swcrc', 'composer.lock', 'symfony.lock'],
     \ 'json5': ['file.json5'],
-    \ 'jsonc': ['file.jsonc', '.babelrc', '.eslintrc', '.jsfmtrc', '.jshintrc', '.jscsrc', '.vsconfig', '.hintrc', '.swrc', 'jsconfig.json', 'tsconfig.json', 'tsconfig.test.json', 'tsconfig-test.json', '.luaurc', 'bun.lock', expand("$HOME/.config/VSCodium/User/settings.json")],
+    \ 'jsonc': ['file.jsonc', '.babelrc', '.eslintrc', '.jsfmtrc', '.jshintrc', '.jscsrc', '.vsconfig', '.hintrc', '.swrc', 'jsconfig.json', 'tsconfig.json', 'tsconfig.test.json', 'tsconfig-test.json', '.luaurc', 'bun.lock', expand("$HOME/.config/VSCodium/User/settings.json"), '/home/user/.config/waybar/config'],
     \ 'jsonl': ['file.jsonl'],
     \ 'jsonnet': ['file.jsonnet', 'file.libsonnet'],
     \ 'jsp': ['file.jsp'],
@@ -468,6 +479,7 @@ func s:GetFilenameChecks() abort
     \ 'matlab': ['file.m'],
     \ 'maxima': ['file.demo', 'file.dmt', 'file.dm1', 'file.dm2', 'file.dm3',
     \            'file.wxm', 'maxima-init.mac'],
+    \ 'mbsync': ['.mbsyncrc', 'file.mbsyncrc', 'isyncrc'],
     \ 'mediawiki': ['file.mw', 'file.wiki'],
     \ 'mel': ['file.mel'],
     \ 'mermaid': ['file.mmd', 'file.mmdc', 'file.mermaid'],
@@ -555,6 +567,7 @@ func s:GetFilenameChecks() abort
     \ 'nsis': ['file.nsi', 'file.nsh'],
     \ 'ntriples': ['file.nt'],
     \ 'nu': ['file.nu'],
+    \ 'numbat': ['file.nbt'],
     \ 'obj': ['file.obj'],
     \ 'objdump': ['file.objdump', 'file.cppobjdump'],
     \ 'obse': ['file.obl', 'file.obse', 'file.oblivion', 'file.obscript'],
@@ -571,7 +584,6 @@ func s:GetFilenameChecks() abort
     \ 'opl': ['file.OPL', 'file.OPl', 'file.OpL', 'file.Opl', 'file.oPL', 'file.oPl', 'file.opL', 'file.opl'],
     \ 'ora': ['file.ora'],
     \ 'org': ['file.org', 'file.org_archive'],
-    \ 'pacmanlog': ['pacman.log'],
     \ 'pamconf': ['/etc/pam.conf', '/etc/pam.d/file', 'any/etc/pam.conf', 'any/etc/pam.d/file'],
     \ 'pamenv': ['/etc/security/pam_env.conf', '/home/user/.pam_environment', '.pam_environment', 'pam_env.conf'],
     \ 'pandoc': ['file.pandoc', 'file.pdk', 'file.pd', 'file.pdc'],
@@ -591,6 +603,7 @@ func s:GetFilenameChecks() abort
     \ 'pilrc': ['file.rcp'],
     \ 'pine': ['.pinerc', 'pinerc', '.pinercex', 'pinercex'],
     \ 'pinfo': ['/etc/pinforc', '/.pinforc', 'any/.pinforc', 'any/etc/pinforc'],
+    \ 'pkl': ['file.pkl'],
     \ 'pli': ['file.pli', 'file.pl1'],
     \ 'plm': ['file.plm', 'file.p36', 'file.pac'],
     \ 'plp': ['file.plp'],
@@ -605,6 +618,7 @@ func s:GetFilenameChecks() abort
     \ 'povini': ['.povrayrc'],
     \ 'ppd': ['file.ppd'],
     \ 'ppwiz': ['file.it', 'file.ih'],
+    \ 'pq': ['file.pq'],
     \ 'prisma': ['file.prisma'],
     \ 'privoxy': ['file.action'],
     \ 'proc': ['file.pc'],
@@ -625,12 +639,13 @@ func s:GetFilenameChecks() abort
     \ 'pymanifest': ['MANIFEST.in'],
     \ 'pyret': ['file.arr'],
     \ 'pyrex': ['file.pyx', 'file.pxd', 'file.pxi', 'file.pyx+'],
-    \ 'python': ['file.py', 'file.pyw', '.pythonstartup', '.pythonrc', '.python_history', '.jline-jython.history', 'file.ptl', 'file.pyi', 'SConstruct'],
+    \ 'python': ['file.py', 'file.pyw', '.pythonstartup', '.pythonrc', '.python_history', '.jline-jython.history', 'file.ptl', 'file.pyi', 'SConstruct', 'file.ipy'],
     \ 'ql': ['file.ql', 'file.qll'],
     \ 'qml': ['file.qml', 'file.qbs'],
     \ 'qmldir': ['qmldir'],
     \ 'quake': ['anybaseq2/file.cfg', 'anyid1/file.cfg', 'quake3/file.cfg', 'baseq2/file.cfg', 'id1/file.cfg', 'quake1/file.cfg', 'some-baseq2/file.cfg', 'some-id1/file.cfg', 'some-quake1/file.cfg'],
     \ 'quarto': ['file.qmd'],
+    \ 'quickbms': ['file.bms'],
     \ 'r': ['file.r', '.Rhistory', '.Rprofile', 'Rprofile', 'Rprofile.site'],
     \ 'racket': ['file.rkt', 'file.rktd', 'file.rktl'],
     \ 'radiance': ['file.rad', 'file.mat'],
@@ -645,7 +660,7 @@ func s:GetFilenameChecks() abort
     \ 'readline': ['.inputrc', 'inputrc'],
     \ 'rego': ['file.rego'],
     \ 'remind': ['.reminders', 'file.remind', 'file.rem', '.reminders-file'],
-    \ 'requirements': ['file.pip', 'requirements.txt', 'dev-requirements.txt', 'constraints.txt', 'requirements.in', 'requirements/dev.txt', 'requires/dev.txt'],
+    \ 'requirements': ['file.pip', 'requirements.txt', 'dev-requirements.txt', 'requirements-dev.txt', 'constraints.txt', 'requirements.in', 'requirements/dev.txt', 'requires/dev.txt'],
     \ 'rescript': ['file.res', 'file.resi'],
     \ 'resolv': ['resolv.conf'],
     \ 'reva': ['file.frt'],
@@ -1063,10 +1078,15 @@ func s:GetScriptEnvChecks() abort
   return {
       \ 'perl': [['#!/usr/bin/env VAR=val perl']],
       \ 'scala': [['#!/usr/bin/env VAR=val VVAR=vval scala']],
-      \ 'awk': [['#!/usr/bin/env VAR=val -i awk']],
+      \ 'awk': [['#!/usr/bin/env --split-string=VAR= awk -vFS="," -f']],
+      \ 'ruby': [['#!/usr/bin/env --split-string=ruby --debug']],
+      \ 'sed': [['#!/usr/bin/env -iS sed -f']],
+      \ 'zsh': [['#!/usr/bin/env -iS VAR=val zsh -l']],
       \ 'execline': [['#!/usr/bin/env execlineb']],
       \ 'scheme': [['#!/usr/bin/env VAR=val --ignore-environment scheme']],
-      \ 'python': [['#!/usr/bin/env VAR=val -S python -w -T']],
+      \ 'sh': [['#!/usr/bin/env -S --ignore-environment VAR= sh -u']],
+      \ 'python': [['#!/usr/bin/env -S -i VAR=val python -B -u']],
+      \ 'csh': [['#!/usr/bin/env -S VAR= csh -f']],
       \ 'wml': [['#!/usr/bin/env VAR=val --split-string wml']],
       \ 'nix': [['#!/usr/bin/env nix-shell']],
       \ }
@@ -1592,6 +1612,22 @@ func Test_git_file()
   filetype off
 endfunc
 
+func Test_grc_file()
+  filetype on
+
+  call writefile(['<?xml version="1.0"?>', '<block>', '</block>'], 'Xfile.grc')
+  split Xfile.grc
+  call assert_equal('xml', &filetype)
+  bwipe!
+
+  call writefile(['metadata:', '  file_format: 1'], 'Xfile.grc')
+  split Xfile.grc
+  call assert_equal('yaml', &filetype)
+  bwipe!
+
+  filetype off
+endfunc
+
 func Test_haredoc_file()
   filetype on
   call assert_true(mkdir('foo/bar', 'pR'))
@@ -1628,20 +1664,36 @@ func Test_haredoc_file()
 endfunc
 
 func Test_help_file()
+  func! s:Check_help_with_iskeyword(fname)
+    exe 'split' a:fname
+    call assert_equal('help', &filetype)
+    bwipe!
+    set iskeyword+=:
+    exe 'split' a:fname
+    call assert_equal('help', &filetype)
+    bwipe!
+    set iskeyword&
+  endfunc
+
   set nomodeline
   filetype on
   call assert_true(mkdir('doc', 'pR'))
 
   call writefile(['some text', 'vim:ft=help:'], 'doc/help.txt', 'D')
-  split doc/help.txt
-  call assert_equal('help', &filetype)
-  bwipe!
+  call s:Check_help_with_iskeyword('doc/help.txt')
 
   call writefile(['some text', 'Copyright: |manual-copyright| vim:ft=help:'],
         \ 'doc/help1.txt', 'D')
-  split doc/help1.txt
-  call assert_equal('help', &filetype)
-  bwipe!
+  call s:Check_help_with_iskeyword('doc/help1.txt')
+
+  call writefile(['some text', 'vim:noet:ft=help:'], 'doc/help2.txt', 'D')
+  call s:Check_help_with_iskeyword('doc/help2.txt')
+
+  call writefile(['some text', 'vim: noet ft=help'], 'doc/help3.txt', 'D')
+  call s:Check_help_with_iskeyword('doc/help3.txt')
+
+  call writefile(['some text', 'vim: ft=help noet'], 'doc/help4.txt', 'D')
+  call s:Check_help_with_iskeyword('doc/help4.txt')
 
   call writefile(['some text'], 'doc/nothelp.txt', 'D')
   split doc/nothelp.txt
@@ -2558,6 +2610,12 @@ func Test_ll_file()
   call assert_equal('llvm', &filetype)
   bwipe!
 
+  " lex (C++)
+  call writefile(['%{', '#include <iostream>', '%}'], 'Xfile.ll', 'D')
+  split Xfile.ll
+  call assert_equal('lex', &filetype)
+  bwipe!
+
   " lifelines
   call writefile(['proc main() {}'], 'Xfile.ll', 'D')
   split Xfile.ll
@@ -2791,6 +2849,7 @@ func Test_pro_file()
   call writefile(['x = findgen(100)/10'], 'Xfile.pro', 'D')
   split Xfile.pro
   call assert_equal('idlang', &filetype)
+  bwipe!
 
   filetype off
 endfunc
@@ -2824,6 +2883,7 @@ func Test_pl_file()
   call writefile(['%data = (1, 2, 3);'], 'Xfile.pl', 'D')
   split Xfile.pl
   call assert_equal('perl', &filetype)
+  bwipe!
 
   filetype off
 endfunc
@@ -2831,15 +2891,48 @@ endfunc
 func Test_make_file()
   filetype on
 
+  " BSD Makefile
+  call writefile([''], 'BSDmakefile', 'D')
+  split BSDmakefile
+  call assert_equal('bsd', get(b:, 'make_flavor', ''))
+  bwipe!
+
+  call writefile(['.ifmake all', '.endif'], 'XMakefile.mak', 'D')
+  split XMakefile.mak
+  call assert_equal('bsd', get(b:, 'make_flavor', ''))
+  bwipe!
+
+  " GNU Makefile
+  call writefile([''], 'GNUmakefile', 'D')
+  split GNUmakefile
+  call assert_equal('gnu', get(b:, 'make_flavor', ''))
+  bwipe!
+
+  call writefile(['ifeq ($(foo),foo)', 'endif'], 'XMakefile.mak', 'D')
+  split XMakefile.mak
+  call assert_equal('gnu', get(b:, 'make_flavor', ''))
+  bwipe!
+
+  call writefile(['define foo', 'endef'], 'XMakefile.mak', 'D')
+  split XMakefile.mak
+  call assert_equal('gnu', get(b:, 'make_flavor', ''))
+  bwipe!
+
+  call writefile(['vim := $(wildcard *.vim)'], 'XMakefile.mak', 'D')
+  split XMakefile.mak
+  call assert_equal('gnu', get(b:, 'make_flavor', ''))
+  bwipe!
+
   " Microsoft Makefile
   call writefile(['# Makefile for Windows', '!if "$(VIMDLL)" == "yes"'], 'XMakefile.mak', 'D')
   split XMakefile.mak
-  call assert_equal(1, get(b:, 'make_microsoft', 0))
+  call assert_equal('microsoft', get(b:, 'make_flavor', ''))
   bwipe!
 
+  " BSD or GNU
   call writefile(['# get the list of tests', 'include testdir/Make_all.mak'], 'XMakefile.mak', 'D')
   split XMakefile.mak
-  call assert_equal(0, get(b:, 'make_microsoft', 0))
+  call assert_notequal('microsoft', get(b:, 'make_flavor', ''))
   bwipe!
 
   filetype off
@@ -2863,12 +2956,92 @@ func Test_map_file()
   filetype off
 endfunc
 
+func Test_nroff_file()
+  filetype on
+
+  call writefile(['.TH VIM 1 "YYYY Mth DD"'], 'Xfile.1', 'D')
+  split Xfile.1
+  call assert_equal('nroff', &filetype)
+  bwipe!
+
+  call writefile(['.Dd $Mdocdate$', '.Dt "DETECTION TEST" "7"', '.Os'], 'Xfile.7', 'D')
+  split Xfile.7
+  call assert_equal('nroff', &filetype)
+  bwipe!
+
+  call writefile(['''\" t'], 'Xfile.3p', 'D')
+  split Xfile.3p
+  call assert_equal('nroff', &filetype)
+  bwipe!
+
+  call writefile(['. /etc/profile'], 'Xfile.1', 'D')
+  split Xfile.1
+  call assert_notequal('nroff', &filetype)
+  bwipe!
+endfunc
+
 func Test_org_file()
   filetype on
 
   call writefile(['* org Headline', '*some bold text*', '/some italic text/'], 'Xfile.org', 'D')
   split Xfile.org
   call assert_equal('org', &filetype)
+  bwipe!
+
+  filetype off
+endfunc
+
+func Test_info_file()
+  filetype on
+
+  call writefile(['File: coreutils.info,  Node: Top,  Next: Introduction,  Up: (dir)'], 'Xfile', 'D')
+  split Xfile
+  call assert_equal('info', &filetype)
+  bwipe!
+
+  filetype off
+endfunc
+
+func Test_mail_file()
+  filetype on
+
+  call writefile(['Return-path: <lgc@debian.home.arpa>'], 'Xfile', 'D')
+  split Xfile
+  call assert_equal('mail', &filetype)
+  bwipe!
+
+  filetype off
+endfunc
+
+func Test_terminfo_file()
+  filetype on
+
+  call writefile(['#	Reconstructed via infocmp from file: /etc/terminfo/x/xterm'], 'Xfile', 'D')
+  split Xfile
+  call assert_equal('terminfo', &filetype)
+  bwipe!
+
+  filetype off
+endfunc
+
+" Filetypes detected from names of existing files
+func Test_pacmanlog()
+  filetype on
+  for fname in ['pacman.log', 'pacman.log.1', 'pacman.log-20250123']
+    call writefile(["[2025-01-23T01:23:45+0000] [PACMAN] Running 'pacman -S -y --config /etc/pacman.conf --'"], fname, 'D')
+    exe 'split ' .. fname
+    call assert_equal('pacmanlog', &filetype, 'for text: ' .. string(fname))
+    bwipe!
+  endfor
+  filetype off
+endfunc
+
+func Test_diff_format()
+  filetype on
+
+  call writefile(['0d555557  1 (John John   2025-01-01 00:00:00 +0000  1) foo'], 'Xdiff', 'D')
+  split Xdiff
+  call assert_true(empty(&filetype))
   bwipe!
 
   filetype off

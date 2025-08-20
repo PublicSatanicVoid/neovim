@@ -24,13 +24,30 @@ int main() {
 }
 }]])
 
-  local response = [==[
-[
-{"kind":1,"paddingLeft":false,"label":"-> int","position":{"character":22,"line":0},"paddingRight":false},
-{"kind":2,"paddingLeft":false,"label":"a:","position":{"character":15,"line":5},"paddingRight":true},
-{"kind":2,"paddingLeft":false,"label":"b:","position":{"character":17,"line":5},"paddingRight":true}
-]
-]==]
+  ---@type lsp.InlayHint[]
+  local response = {
+    {
+      kind = 1,
+      paddingLeft = false,
+      paddingRight = false,
+      label = '-> int',
+      position = { character = 22, line = 0 },
+    },
+    {
+      kind = 2,
+      paddingLeft = false,
+      paddingRight = true,
+      label = 'a:',
+      position = { character = 15, line = 5 },
+    },
+    {
+      kind = 2,
+      paddingLeft = false,
+      paddingRight = true,
+      label = 'b:',
+      position = { character = 17, line = 5 },
+    },
+  }
 
   local grid_without_inlay_hints = [[
   auto add(int a, int b) { return a + b; }          |
@@ -78,7 +95,7 @@ int main() {
         },
         handlers = {
           ['textDocument/inlayHint'] = function(_, _, callback)
-            callback(nil, vim.json.decode(response))
+            callback(nil, response)
           end,
         },
       })
@@ -217,8 +234,6 @@ int main() {
 
   describe('get()', function()
     it('returns filtered inlay hints', function()
-      --- @type lsp.InlayHint[]
-      local expected = vim.json.decode(response)
       local expected2 = {
         kind = 1,
         paddingLeft = false,
@@ -248,9 +263,9 @@ int main() {
       --- @type vim.lsp.inlay_hint.get.ret
       eq(
         {
-          { bufnr = 1, client_id = 1, inlay_hint = expected[1] },
-          { bufnr = 1, client_id = 1, inlay_hint = expected[2] },
-          { bufnr = 1, client_id = 1, inlay_hint = expected[3] },
+          { bufnr = 1, client_id = 1, inlay_hint = response[1] },
+          { bufnr = 1, client_id = 1, inlay_hint = response[2] },
+          { bufnr = 1, client_id = 1, inlay_hint = response[3] },
           { bufnr = 1, client_id = 2, inlay_hint = expected2 },
         },
         exec_lua(function()
@@ -274,8 +289,8 @@ int main() {
 
       eq(
         {
-          { bufnr = 1, client_id = 1, inlay_hint = expected[2] },
-          { bufnr = 1, client_id = 1, inlay_hint = expected[3] },
+          { bufnr = 1, client_id = 1, inlay_hint = response[2] },
+          { bufnr = 1, client_id = 1, inlay_hint = response[3] },
         },
         exec_lua(function()
           return vim.lsp.inlay_hint.get({
@@ -297,6 +312,50 @@ int main() {
         end)
       )
     end)
+
+    it('does not request hints from lsp when disabled', function()
+      exec_lua(function()
+        _G.server2 = _G._create_server({
+          capabilities = {
+            inlayHintProvider = true,
+          },
+          handlers = {
+            ['textDocument/inlayHint'] = function(_, _, callback)
+              _G.got_inlay_hint_request = true
+              callback(nil, {})
+            end,
+          },
+        })
+        _G.client2 = vim.lsp.start({ name = 'dummy2', cmd = _G.server2.cmd })
+      end)
+
+      local function was_request_sent()
+        return exec_lua(function()
+          return _G.got_inlay_hint_request == true
+        end)
+      end
+
+      eq(false, was_request_sent())
+
+      exec_lua(function()
+        vim.lsp.inlay_hint.get()
+      end)
+
+      eq(false, was_request_sent())
+
+      exec_lua(function()
+        vim.lsp.inlay_hint.enable(false, { bufnr = bufnr })
+        vim.lsp.inlay_hint.get()
+      end)
+
+      eq(false, was_request_sent())
+
+      exec_lua(function()
+        vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
+      end)
+
+      eq(true, was_request_sent())
+    end)
   end)
 end)
 
@@ -305,15 +364,13 @@ describe('Inlay hints handler', function()
 test text
   ]])
 
-  local response = [==[
-  [
-      { "position": { "line": 0, "character": 0 }, "label": "0" },
-      { "position": { "line": 0, "character": 0 }, "label": "1" },
-      { "position": { "line": 0, "character": 0 }, "label": "2" },
-      { "position": { "line": 0, "character": 0 }, "label": "3" },
-      { "position": { "line": 0, "character": 0 }, "label": "4" }
-  ]
-  ]==]
+  local response = {
+    { position = { line = 0, character = 0 }, label = '0' },
+    { position = { line = 0, character = 0 }, label = '1' },
+    { position = { line = 0, character = 0 }, label = '2' },
+    { position = { line = 0, character = 0 }, label = '3' },
+    { position = { line = 0, character = 0 }, label = '4' },
+  }
 
   local grid_without_inlay_hints = [[
   test text                                         |
@@ -349,7 +406,7 @@ test text
         },
         handlers = {
           ['textDocument/inlayHint'] = function(_, _, callback)
-            callback(nil, vim.json.decode(response))
+            callback(nil, response)
           end,
         },
       })

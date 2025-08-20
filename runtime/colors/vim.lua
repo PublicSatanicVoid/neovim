@@ -47,6 +47,7 @@ hi('WildMenu',     { fg = 'Black', bg = 'Yellow',       ctermfg = 'Black', cterm
 hi('VertSplit',      { link = 'Normal' })
 hi('WinSeparator',   { link = 'VertSplit' })
 hi('WinBarNC',       { link = 'WinBar' })
+hi('DiffTextAdd',    { link = 'DiffText' })
 hi('EndOfBuffer',    { link = 'NonText' })
 hi('LineNrAbove',    { link = 'LineNr' })
 hi('LineNrBelow',    { link = 'LineNr' })
@@ -133,6 +134,7 @@ hi('DiagnosticDeprecated',       { sp = 'Red', strikethrough = true,    cterm = 
 hi('DiagnosticUnnecessary', { link = 'Comment' })
 hi('LspInlayHint',          { link = 'NonText' })
 hi('SnippetTabstop',        { link = 'Visual' })
+hi('SnippetTabstopActive',  { link = 'SnippetTabstop' })
 
 -- Text
 hi('@markup.raw',       { link = 'Comment' })

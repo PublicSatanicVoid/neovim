@@ -87,9 +87,7 @@ static bool clipboard_delay_update = false;  // delay clipboard update
 static bool clipboard_needs_update = false;  // clipboard was updated
 static bool clipboard_didwarn = false;
 
-#ifdef INCLUDE_GENERATED_DECLARATIONS
-# include "ops.c.generated.h"
-#endif
+#include "ops.c.generated.h"
 
 static const char e_search_pattern_and_expression_register_may_not_contain_two_or_more_lines[]
   = N_("E883: Search pattern and expression register may not contain two or more lines");
@@ -133,16 +131,6 @@ static char opchars[][3] = {
   { Ctrl_A, NUL, OPF_CHANGE },           // OP_NR_ADD
   { Ctrl_X, NUL, OPF_CHANGE },           // OP_NR_SUB
 };
-
-yankreg_T *get_y_previous(void)
-{
-  return y_previous;
-}
-
-void set_y_previous(yankreg_T *yreg)
-{
-  y_previous = yreg;
-}
 
 /// Translate a command name into an operator type.
 /// Must only be called with a valid operator name!
@@ -297,12 +285,12 @@ static int get_vts_sum(const int *vts_array, int index)
   int sum = 0;
   int i;
 
-  // Perform the summation for indeces within the actual array.
+  // Perform the summation for indices within the actual array.
   for (i = 1; i <= index && i <= vts_array[0]; i++) {
     sum += vts_array[i];
   }
 
-  // Add topstops whose indeces exceed the actual array.
+  // Add tabstops whose indices exceed the actual array.
   if (i <= index) {
     sum += vts_array[vts_array[0]] * (index - vts_array[0]);
   }
@@ -720,84 +708,10 @@ static void block_insert(oparg_T *oap, const char *s, size_t slen, bool b_insert
 
   State = oldstate;
 
-  changed_lines(curbuf, oap->start.lnum + 1, 0, oap->end.lnum + 1, 0, true);
-}
-
-/// Handle reindenting a block of lines.
-void op_reindent(oparg_T *oap, Indenter how)
-{
-  int i = 0;
-  linenr_T first_changed = 0;
-  linenr_T last_changed = 0;
-  linenr_T start_lnum = curwin->w_cursor.lnum;
-
-  // Don't even try when 'modifiable' is off.
-  if (!MODIFIABLE(curbuf)) {
-    emsg(_(e_modifiable));
-    return;
-  }
-
-  // Save for undo.  Do this once for all lines, much faster than doing this
-  // for each line separately, especially when undoing.
-  if (u_savecommon(curbuf, start_lnum - 1, start_lnum + oap->line_count,
-                   start_lnum + oap->line_count, false) == OK) {
-    int amount;
-    for (i = oap->line_count - 1; i >= 0 && !got_int; i--) {
-      // it's a slow thing to do, so give feedback so there's no worry
-      // that the computer's just hung.
-
-      if (i > 1
-          && (i % 50 == 0 || i == oap->line_count - 1)
-          && oap->line_count > p_report) {
-        smsg(0, _("%" PRId64 " lines to indent... "), (int64_t)i);
-      }
-
-      // Be vi-compatible: For lisp indenting the first line is not
-      // indented, unless there is only one line.
-      if (i != oap->line_count - 1 || oap->line_count == 1
-          || how != get_lisp_indent) {
-        char *l = skipwhite(get_cursor_line_ptr());
-        if (*l == NUL) {                      // empty or blank line
-          amount = 0;
-        } else {
-          amount = how();                     // get the indent for this line
-        }
-        if (amount >= 0 && set_indent(amount, 0)) {
-          // did change the indent, call changed_lines() later
-          if (first_changed == 0) {
-            first_changed = curwin->w_cursor.lnum;
-          }
-          last_changed = curwin->w_cursor.lnum;
-        }
-      }
-      curwin->w_cursor.lnum++;
-      curwin->w_cursor.col = 0;      // make sure it's valid
-    }
-  }
-
-  // put cursor on first non-blank of indented line
-  curwin->w_cursor.lnum = start_lnum;
-  beginline(BL_SOL | BL_FIX);
-
-  // Mark changed lines so that they will be redrawn.  When Visual
-  // highlighting was present, need to continue until the last line.  When
-  // there is no change still need to remove the Visual highlighting.
-  if (last_changed != 0) {
-    changed_lines(curbuf, first_changed, 0,
-                  oap->is_VIsual ? start_lnum + oap->line_count
-                                 : last_changed + 1, 0, true);
-  } else if (oap->is_VIsual) {
-    redraw_curbuf_later(UPD_INVERTED);
-  }
-
-  if (oap->line_count > p_report) {
-    i = oap->line_count - (i + 1);
-    smsg(0, NGETTEXT("%" PRId64 " line indented ", "%" PRId64 " lines indented ", i), (int64_t)i);
-  }
-  if ((cmdmod.cmod_flags & CMOD_LOCKMARKS) == 0) {
-    // set '[ and '] marks
-    curbuf->b_op_start = oap->start;
-    curbuf->b_op_end = oap->end;
+  // Only call changed_lines if we actually modified additional lines beyond the first
+  // This matches the condition for the for loop above: start + 1 <= end
+  if (oap->start.lnum < oap->end.lnum) {
+    changed_lines(curbuf, oap->start.lnum + 1, 0, oap->end.lnum + 1, 0, true);
   }
 }
 
@@ -966,16 +880,23 @@ yankreg_T *copy_register(int name)
 }
 
 /// Check if the current yank register has kMTLineWise register type
-bool yank_register_mline(int regname)
+/// For valid, non-blackhole registers also provides pointer to the register
+/// structure prepared for pasting.
+///
+/// @param regname The name of the register used or 0 for the unnamed register
+/// @param reg Pointer to store yankreg_T* for the requested register. Will be
+///        set to NULL for invalid or blackhole registers.
+bool yank_register_mline(int regname, yankreg_T **reg)
 {
+  *reg = NULL;
   if (regname != 0 && !valid_yank_reg(regname, false)) {
     return false;
   }
   if (regname == '_') {  // black hole is always empty
     return false;
   }
-  yankreg_T *reg = get_yank_register(regname, YREG_PASTE);
-  return reg->y_type == kMTLineWise;
+  *reg = get_yank_register(regname, YREG_PASTE);
+  return (*reg)->y_type == kMTLineWise;
 }
 
 /// Start or stop recording into a yank register.
@@ -1322,7 +1243,7 @@ static int put_in_typebuf(char *s, bool esc, bool colon, int silent)
 /// @param literally_arg  insert literally, not as if typed
 ///
 /// @return FAIL for failure, OK otherwise
-int insert_reg(int regname, bool literally_arg)
+int insert_reg(int regname, yankreg_T *reg, bool literally_arg)
 {
   int retval = OK;
   bool allocated;
@@ -1353,12 +1274,14 @@ int insert_reg(int regname, bool literally_arg)
       xfree(arg);
     }
   } else {  // Name or number register.
-    yankreg_T *reg = get_yank_register(regname, YREG_PASTE);
+    if (reg == NULL) {
+      reg = get_yank_register(regname, YREG_PASTE);
+    }
     if (reg->y_array == NULL) {
       retval = FAIL;
     } else {
       for (size_t i = 0; i < reg->y_size; i++) {
-        if (regname == '-') {
+        if (regname == '-' && reg->y_type == kMTCharWise) {
           Direction dir = BACKWARD;
           if ((State & REPLACE_FLAG) != 0) {
             pos_T curpos;
@@ -1379,11 +1302,11 @@ int insert_reg(int regname, bool literally_arg)
           do_put(regname, NULL, dir, 1, PUT_CURSEND);
         } else {
           stuffescaped(reg->y_array[i].data, literally);
-        }
-        // Insert a newline between lines and after last line if
-        // y_type is kMTLineWise.
-        if (reg->y_type == kMTLineWise || i < reg->y_size - 1) {
-          stuffcharReadbuff('\n');
+          // Insert a newline between lines and after last line if
+          // y_type is kMTLineWise.
+          if (reg->y_type == kMTLineWise || i < reg->y_size - 1) {
+            stuffcharReadbuff('\n');
+          }
         }
       }
     }
@@ -3729,14 +3652,6 @@ void adjust_cursor_eol(void)
   }
 }
 
-/// @return  true if lines starting with '#' should be left aligned.
-bool preprocs_left(void)
-{
-  return ((curbuf->b_p_si && !curbuf->b_p_cin)
-          || (curbuf->b_p_cin && in_cinkeys('#', ' ', true)
-              && curbuf->b_ind_hash_comment == 0));
-}
-
 /// @return  the character name of the register with the given number
 int get_register_name(int num)
 {
@@ -5757,7 +5672,7 @@ static void get_op_vcol(oparg_T *oap, colnr_T redo_VIsual_vcol, bool initial)
   colnr_T end;
 
   if (VIsual_mode != Ctrl_V
-      || (!initial && oap->end.col < curwin->w_width_inner)) {
+      || (!initial && oap->end.col < curwin->w_view_width)) {
     return;
   }
 
@@ -6606,10 +6521,17 @@ void finish_yankreg_from_object(yankreg_T *reg, bool clipboard_adjust)
     }
   }
 
+  update_yankreg_width(reg);
+}
+
+/// Updates the "y_width" of a blockwise register based on its contents.
+/// Do nothing on a non-blockwise register.
+static void update_yankreg_width(yankreg_T *reg)
+{
   if (reg->y_type == kMTBlockWise) {
     size_t maxlen = 0;
     for (size_t i = 0; i < reg->y_size; i++) {
-      size_t rowlen = reg->y_array[i].size;
+      size_t rowlen = mb_string2cells_len(reg->y_array[i].data, reg->y_array[i].size);
       maxlen = MAX(maxlen, rowlen);
     }
     assert(maxlen <= INT_MAX);
@@ -6711,15 +6633,7 @@ static bool get_clipboard(int name, yankreg_T **target, bool quiet)
     }
   }
 
-  if (reg->y_type == kMTBlockWise) {
-    size_t maxlen = 0;
-    for (size_t i = 0; i < reg->y_size; i++) {
-      size_t rowlen = reg->y_array[i].size;
-      maxlen = MAX(maxlen, rowlen);
-    }
-    assert(maxlen <= INT_MAX);
-    reg->y_width = (int)maxlen - 1;
-  }
+  update_yankreg_width(reg);
 
   *target = reg;
   return true;

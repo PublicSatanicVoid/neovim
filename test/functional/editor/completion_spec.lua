@@ -124,7 +124,7 @@ describe('completion', function()
         foo                                                         |
         ^                                                            |
         {1:~                                                           }|*5
-        {5:-- ^X mode (^]^D^E^F^I^K^L^N^O^Ps^U^V^Y)}                    |
+        {5:-- ^X mode (^]^D^E^F^I^K^L^N^O^P^Rs^U^V^Y)}                  |
       ]])
       feed('<C-n>')
       screen:expect([[
@@ -952,6 +952,12 @@ describe('completion', function()
     end
   end)
 
+  it('cmdline completion for :restart', function()
+    eq('qall', fn.getcompletion('restart +qa', 'cmdline')[1])
+    eq('edit', fn.getcompletion('restart +qall ed', 'cmdline')[1])
+    eq('edit', fn.getcompletion('restart ed', 'cmdline')[1])
+  end)
+
   describe('from the commandline window', function()
     it('is cleared after CTRL-C', function()
       feed('q:')
@@ -1350,5 +1356,57 @@ describe('completion', function()
       feed('S<C-X><C-O>')
       eq('completeopt option does not include popup', api.nvim_get_var('err_msg'))
     end)
+  end)
+
+  it([[does not include buffer from non-focusable window for 'complete' "w"]], function()
+    local buf = api.nvim_create_buf(false, true)
+    local cfg = { focusable = false, relative = 'win', bufpos = { 1, 0 }, width = 1, height = 1 }
+    local win = api.nvim_open_win(buf, false, cfg)
+    api.nvim_buf_set_lines(buf, 0, -1, false, { 'foo' })
+    feed('i<C-N>')
+    screen:expect([[
+      ^                                                            |
+      {4:f}{1:                                                           }|
+      {1:~                                                           }|*5
+      {5:-- Keyword completion (^N^P) }{9:Pattern not found}              |
+    ]])
+    api.nvim_win_set_config(win, { focusable = true })
+    feed('<Esc>i<C-N>')
+    screen:expect([[
+      foo^                                                         |
+      {4:f}{1:                                                           }|
+      {1:~                                                           }|*5
+      {5:-- Keyword completion (^N^P) The only match}                 |
+    ]])
+  end)
+
+  -- oldtest: Test_shortmess()
+  it('shortmess+=c turns off completion messages', function()
+    command('set ruler')
+    command([[call setline(1, ['hello', 'hullo', 'heee'])]])
+    feed('Goh<C-N>')
+    screen:expect([[
+      hello                                                       |
+      hullo                                                       |
+      heee                                                        |
+      hello^                                                       |
+      {12:hello          }{1:                                             }|
+      {4:hullo          }{1:                                             }|
+      {4:heee           }{1:                                             }|
+      {5:-- Keyword completion (^N^P) }{6:match 1 of 3}                   |
+    ]])
+    feed('<Esc>')
+    command('set shm+=c')
+    feed('Sh<C-N>')
+    screen:expect([[
+      hello                                                       |
+      hullo                                                       |
+      heee                                                        |
+      hello^                                                       |
+      {12:hello          }{1:                                             }|
+      {4:hullo          }{1:                                             }|
+      {4:heee           }{1:                                             }|
+      {5:-- INSERT --}                              4,6           All |
+    ]])
   end)
 end)
