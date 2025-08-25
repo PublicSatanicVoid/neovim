@@ -9534,6 +9534,20 @@ local options = {
       varname = 'p_udf',
     },
     {
+      abbreviation = 'udfhash',
+      defaults = { if_true = false },
+      desc = [=[
+        When on, and 'undofile' is enabled, save undo files to the hashed
+        canonical file path of the buffer, rather than the munged canonical
+        file path (path separator replaced with '%').
+      ]=],
+      full_name = 'undofilehash',
+      scope = { 'global' },
+      short_desc = N_('use hashed file path in undo files'),
+      type = 'boolean',
+      varname = 'p_udfhash',
+    },
+    {
       abbreviation = 'ul',
       cb = 'did_set_undolevels',
       defaults = 1000,
