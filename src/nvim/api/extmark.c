@@ -197,8 +197,13 @@ static Array extmark_to_array(MTPair extmark, bool id, bool add_dict, bool hl_na
 ///          - details: Whether to include the details dict
 ///          - hl_name: Whether to include highlight group name instead of id, true if omitted
 /// @param[out] err   Error details, if any
-/// @return 0-indexed (row, col) tuple or empty list () if extmark id was
-/// absent
+/// @return 0-indexed (row, col, details?) tuple or empty list () if extmark id was absent.  The
+/// optional `details` dictionary contains the same keys as `opts` in |nvim_buf_set_extmark()|,
+/// except for `id`, `conceal_lines` and `ephemeral`. It also contains the following keys:
+///
+/// - ns_id: |namespace| id
+/// - invalid: boolean that indicates whether the mark is hidden because the entirety of
+/// text span range is deleted. See also the key `invalidate` in |nvim_buf_set_extmark()|.
 Tuple(Integer, Integer, *DictAs(extmark_details))
 nvim_buf_get_extmark_by_id(Buffer buffer, Integer ns_id, Integer id, Dict(get_extmark) * opts,
                            Arena *arena, Error *err)
@@ -284,7 +289,8 @@ nvim_buf_get_extmark_by_id(Buffer buffer, Integer ns_id, Integer id, Dict(get_ex
 ///                     their start position is less than `start`
 ///          - type: Filter marks by type: "highlight", "sign", "virt_text" and "virt_lines"
 /// @param[out] err   Error details, if any
-/// @return List of `[extmark_id, row, col]` tuples in "traversal order".
+/// @return List of `[extmark_id, row, col, details?]` tuples in "traversal order". For the
+/// `details` dictionary, see |nvim_buf_get_extmark_by_id()|.
 ArrayOf(DictAs(get_extmark_item)) nvim_buf_get_extmarks(Buffer buffer, Integer ns_id, Object start,
                                                         Object end,
                                                         Dict(get_extmarks) *opts, Arena *arena,
@@ -830,6 +836,15 @@ Integer nvim_buf_set_extmark(Buffer buffer, Integer ns_id, Integer line, Integer
       col2 = c;
     }
 
+    DecorPriority subpriority = 0;
+    if (HAS_KEY(opts, set_extmark, _subpriority)) {
+      VALIDATE_RANGE((opts->_subpriority >= 0 && opts->_subpriority <= UINT16_MAX),
+                     "_subpriority", {
+        goto error;
+      });
+      subpriority = (DecorPriority)opts->_subpriority;
+    }
+
     if (kv_size(virt_text.data.virt_text)) {
       decor_range_add_virt(&decor_state, r, c, line2, col2, decor_put_vt(virt_text, NULL), true);
     }
@@ -839,7 +854,8 @@ Integer nvim_buf_set_extmark(Buffer buffer, Integer ns_id, Integer line, Integer
     if (has_hl) {
       DecorSignHighlight sh = decor_sh_from_inline(hl);
       sh.url = url;
-      decor_range_add_sh(&decor_state, r, c, line2, col2, &sh, true, (uint32_t)ns_id, id);
+      decor_range_add_sh(&decor_state, r, c, line2, col2, &sh, true, (uint32_t)ns_id, id,
+                         subpriority);
     }
   } else {
     if (opts->ephemeral) {
@@ -1033,8 +1049,7 @@ void nvim_buf_clear_namespace(Buffer buffer, Integer ns_id, Integer line_start, 
 ///               ```
 ///                 ["win", winid, bufnr, toprow, botrow]
 ///               ```
-///             - on_line: called for each buffer line being redrawn.
-///                 (The interaction with fold lines is subject to change)
+///             - on_line: (deprecated, use on_range instead)
 ///               ```
 ///                 ["line", winid, bufnr, row]
 ///               ```
@@ -1046,6 +1061,13 @@ void nvim_buf_clear_namespace(Buffer buffer, Integer ns_id, Integer line_start, 
 ///               ```
 ///                 ["range", winid, bufnr, begin_row, begin_col, end_row, end_col]
 ///               ```
+///
+///               In addition to returning a boolean, it is also allowed to
+///               return a `skip_row, skip_col` pair of integers. This implies
+///               that this function does not need to be called until a range
+///               which continues beyond the skipped position. A single integer
+///               return value `skip_row` is short for `skip_row, 0`
+///
 ///             - on_end: called at the end of a redraw cycle
 ///               ```
 ///                 ["end", tick]

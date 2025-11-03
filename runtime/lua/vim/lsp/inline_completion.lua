@@ -1,7 +1,38 @@
+--- @brief
+--- This module provides the LSP "inline completion" feature, for completing multiline text (e.g.,
+--- whole methods) instead of just a word or line, which may result in "syntactically or
+--- semantically incorrect" code. Unlike regular completion, this is typically presented as overlay
+--- text instead of a menu of completion candidates.
+---
+--- LSP spec: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#textDocument_inlineCompletion
+---
+--- To try it out, here is a quickstart example using Copilot: [lsp-copilot]()
+---
+--- 1. Install Copilot:
+---    ```sh
+---    npm install --global @github/copilot-language-server
+---    ```
+--- 2. Define a config, (or copy `lsp/copilot.lua` from https://github.com/neovim/nvim-lspconfig):
+---    ```lua
+---    vim.lsp.config('copilot', {
+---      cmd = { 'copilot-language-server', '--stdio', },
+---      root_markers = { '.git' },
+---    })
+---    ```
+--- 3. Activate the config:
+---    ```lua
+---    vim.lsp.enable('copilot')
+---    ```
+--- 4. Sign in to Copilot, or use the `:LspCopilotSignIn` command from https://github.com/neovim/nvim-lspconfig
+--- 5. Enable inline completion:
+---    ```lua
+---    vim.lsp.inline_completion.enable()
+---    ```
+--- 6. Set a keymap for `vim.lsp.inline_completion.get()` and invoke the keymap.
+
 local util = require('vim.lsp.util')
 local log = require('vim.lsp.log')
 local protocol = require('vim.lsp.protocol')
-local ms = require('vim.lsp.protocol').Methods
 local grammar = require('vim.lsp._snippet_grammar')
 local api = vim.api
 
@@ -29,7 +60,7 @@ local namespace = api.nvim_create_namespace('nvim.lsp.inline_completion')
 ---@field client_state table<integer, vim.lsp.inline_completion.ClientState>
 local Completor = {
   name = 'inline_completion',
-  method = ms.textDocument_inlineCompletion,
+  method = 'textDocument/inlineCompletion',
   active = {},
 }
 Completor.__index = Completor
@@ -44,12 +75,14 @@ function Completor:new(bufnr)
   self.client_state = {}
   api.nvim_create_autocmd({ 'InsertEnter', 'CursorMovedI', 'TextChangedP' }, {
     group = self.augroup,
+    buffer = bufnr,
     callback = function()
       self:automatic_request()
     end,
   })
   api.nvim_create_autocmd({ 'InsertLeave' }, {
     group = self.augroup,
+    buffer = bufnr,
     callback = function()
       self:abort()
     end,
@@ -180,15 +213,25 @@ function Completor:show(hint)
     table.insert(lines[#lines], { hint, 'ComplHintMore' })
   end
 
-  -- The first line of the text to be inserted
-  -- usually contains characters entered by the user,
-  -- which should be skipped before displaying the virtual text.
   local pos = current.range and current.range.start:to_extmark()
     or vim.pos.cursor(api.nvim_win_get_cursor(vim.fn.bufwinid(self.bufnr))):to_extmark()
   local row, col = unpack(pos)
+
+  -- To ensure that virtual text remains visible continuously (without flickering)
+  -- while the user is editing the buffer, we allow displaying expired virtual text.
+  -- Since the position of virtual text may become invalid after document changes,
+  -- out-of-range items are ignored.
+  local line_text = api.nvim_buf_get_lines(self.bufnr, row, row + 1, false)[1]
+  if not (line_text and #line_text >= col) then
+    self.current = nil
+    return
+  end
+
+  -- The first line of the text to be inserted
+  -- usually contains characters entered by the user,
+  -- which should be skipped before displaying the virtual text.
   local virt_text = lines[1]
-  local skip =
-    lcp(api.nvim_buf_get_lines(self.bufnr, row, row + 1, true)[1]:sub(col + 1), virt_text[1][1])
+  local skip = lcp(line_text:sub(col + 1), virt_text[1][1])
   local winid = api.nvim_get_current_win()
   -- At least, characters before the cursor should be skipped.
   if api.nvim_win_get_buf(winid) == self.bufnr then
@@ -239,9 +282,9 @@ function Completor:request(kind)
       position = util.make_position_params(0, client.offset_encoding).position,
       context = context,
     }
-    client:request(ms.textDocument_inlineCompletion, params, function(...)
+    client:request('textDocument/inlineCompletion', params, function(...)
       self:handler(...)
-    end)
+    end, self.bufnr)
   end
 end
 
@@ -274,9 +317,10 @@ end
 function Completor:abort()
   util._cancel_requests({
     bufnr = self.bufnr,
-    method = ms.textDocument_inlineCompletion,
+    method = 'textDocument/inlineCompletion',
     type = 'pending',
   })
+  self:reset_timer()
   self:hide()
   self.current = nil
 end
@@ -407,11 +451,7 @@ end
 ---   if not vim.lsp.inline_completion.get() then
 ---     return '<Tab>'
 ---   end
---- end, {
----   expr = true,
----   replace_keycodes = true,
----   desc = 'Get the current inline completion',
---- })
+--- end, { expr = true, desc = 'Accept the current inline completion' })
 --- ````
 ---@param opts? vim.lsp.inline_completion.get.Opts
 ---@return boolean `true` if a completion was applied, else `false`.

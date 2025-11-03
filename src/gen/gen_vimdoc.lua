@@ -1,5 +1,8 @@
 #!/usr/bin/env -S nvim -l
---- Generates Nvim :help docs from Lua/C docstrings
+--- Generates Nvim :help docs from Lua/C docstrings.
+---
+--- Usage:
+---     make doc
 ---
 --- The generated :help text for each function is formatted as follows:
 --- - Max width of 78 columns (`TEXT_WIDTH`).
@@ -106,6 +109,7 @@ local config = {
     filename = 'api.txt',
     section_order = {
       -- Sections at the top, in a specific order:
+      'events.c',
       'vim.c',
       'vimscript.c',
 
@@ -126,10 +130,21 @@ local config = {
       ['vim.c'] = 'Global',
     },
     section_fmt = function(name)
+      if name == 'Events' then
+        return 'Global Events'
+      end
+
       return name .. ' Functions'
     end,
     helptag_fmt = function(name)
       return fmt('api-%s', name:lower())
+    end,
+    fn_helptag_fmt = function(fun)
+      local name = fun.name
+      if vim.endswith(name, '_event') then
+        return name
+      end
+      return fn_helptag_fmt_common(fun)
     end,
   },
   lua = {
@@ -169,11 +184,9 @@ local config = {
       'version.lua',
 
       -- Sections at the end, in a specific order:
-      'tohtml.lua',
       '_extui.lua',
     },
     files = {
-      'runtime/lua/tohtml.lua',
       'runtime/lua/vim/_editor.lua',
       'runtime/lua/vim/_extui.lua',
       'runtime/lua/vim/_inspector.lua',
@@ -234,9 +247,6 @@ local config = {
       elseif name == 'builtin' then
         return 'VIM'
       end
-      if name == 'tohtml' then
-        return 'Lua module: tohtml'
-      end
       return 'Lua module: vim.' .. name
     end,
     helptag_fmt = function(name)
@@ -246,8 +256,6 @@ local config = {
         return 'lua-vim-system'
       elseif name == '_options' then
         return 'lua-vimscript'
-      elseif name == 'tohtml' then
-        return 'tohtml'
       end
       return 'vim.' .. name:lower()
     end,
@@ -376,25 +384,6 @@ local config = {
       return 'treesitter-' .. name:lower()
     end,
   },
-  editorconfig = {
-    filename = 'editorconfig.txt',
-    files = {
-      'runtime/lua/editorconfig.lua',
-    },
-    section_order = {
-      'editorconfig.lua',
-    },
-    section_fmt = function(_name)
-      return 'EditorConfig integration'
-    end,
-    helptag_fmt = function(name)
-      return name:lower()
-    end,
-    fn_xform = function(fun)
-      fun.table = true
-      fun.name = vim.split(fun.name, '.', { plain = true })[2]
-    end,
-  },
   health = {
     filename = 'health.txt',
     files = {
@@ -419,6 +408,34 @@ local config = {
     end,
     helptag_fmt = function()
       return { 'vim.pack' }
+    end,
+  },
+  plugins = {
+    filename = 'plugins.txt',
+    section_order = {
+      'difftool.lua',
+      'editorconfig.lua',
+      'tohtml.lua',
+      'undotree.lua',
+    },
+    files = {
+      'runtime/lua/editorconfig.lua',
+      'runtime/lua/tohtml.lua',
+      'runtime/pack/dist/opt/nvim.undotree/lua/undotree.lua',
+      'runtime/pack/dist/opt/nvim.difftool/lua/difftool.lua',
+    },
+    fn_xform = function(fun)
+      if fun.module == 'editorconfig' then
+        -- Example: "editorconfig.properties.root()" => "editorconfig.root"
+        fun.table = true
+        fun.name = vim.split(fun.name, '.', { plain = true })[2] or fun.name
+      end
+    end,
+    section_fmt = function(name)
+      return 'Builtin plugin: ' .. name:lower()
+    end,
+    helptag_fmt = function(name)
+      return name:lower()
     end,
   },
 }
@@ -452,7 +469,6 @@ end
 --- @param generics? table<string,string>
 --- @param default? string
 local function render_type(ty, generics, default)
-  -- TODO(lewis6991): Document LSP protocol types
   ty = ty:gsub('vim%.lsp%.protocol%.Method.[%w.]+', 'string')
 
   if generics then

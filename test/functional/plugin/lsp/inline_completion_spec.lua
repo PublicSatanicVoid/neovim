@@ -172,6 +172,18 @@ describe('vim.lsp.inline_completion', function()
       feed('<Esc>')
       screen:expect({ grid = grid_without_candidates })
     end)
+
+    it('no request when leaving insert mode immediately after typing', function()
+      screen:expect({ grid = grid_without_candidates })
+      feed('ifoobar<Esc>')
+      screen:expect([[
+        function fibonacci()                                 |
+        fooba^r                                               |
+        {1:~                                                    }|*11
+                                                             |
+      ]])
+      screen:expect_unchanged(false, 500)
+    end)
   end)
 
   describe('get()', function()
@@ -181,6 +193,7 @@ describe('vim.lsp.inline_completion', function()
       exec_lua(function()
         vim.lsp.inline_completion.get()
       end)
+      n.poke_eventloop()
       feed('<Esc>')
       screen:expect({ grid = grid_applied_candidates })
     end)
@@ -267,6 +280,7 @@ describe('vim.lsp.inline_completion', function()
       exec_lua(function()
         vim.lsp.inline_completion.get()
       end)
+      n.poke_eventloop()
       feed('<Esc>')
       screen:expect([[
         function fibonacci(n) {                              |

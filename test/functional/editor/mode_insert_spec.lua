@@ -84,9 +84,9 @@ describe('insert-mode', function()
       ]])
     end)
 
-    it('inserts named registers literally', function()
+    it('inserts named/clipboard registers literally', function()
       local screen = Screen.new(50, 6)
-      -- regular text without special charecter command
+      -- regular text without special character command
       command('let @a = "test"')
       feed('i<C-R>a<ESC>')
       screen:expect([[
