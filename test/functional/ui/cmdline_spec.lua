@@ -797,6 +797,69 @@ local function test_cmdline(linegrid)
                                |
     ]])
   end)
+
+  it('works with exmode', function()
+    feed('gQ')
+    screen:expect({
+      grid = [[
+                                 |
+        {3:                         }|
+        Entering Ex mode.  Type "|
+        visual" to go to Normal m|
+        ode.^                     |
+      ]],
+      cmdline = { { content = { { '' } }, firstc = ':', pos = 0 } },
+    })
+    feed('echo "foo"<CR>')
+    screen:expect({
+      grid = [[
+        {3:                         }|
+        Entering Ex mode.  Type "|
+        visual" to go to Normal m|
+        ode.                     |
+        foo^                      |
+      ]],
+      cmdline = { { content = { { '' } }, firstc = ':', pos = 0 } },
+      cmdline_block = { { { 'echo "foo"' } } },
+    })
+    feed('vis<CR>')
+    screen:expect([[
+      ^                         |
+      {1:~                        }|*3
+                               |
+    ]])
+  end)
+
+  it('works with :lua debug.debug()', function()
+    feed(':lua debug.debug()<CR>')
+    screen:expect({
+      grid = [[
+        ^                         |
+        {1:~                        }|*3
+                                 |
+      ]],
+      cmdline = { { content = { { '' } }, pos = 0, prompt = 'lua_debug> ' } },
+    })
+    feed('print("foo")<CR>')
+    screen:expect({
+      grid = [[
+                                 |
+        {1:~                        }|*3
+        foo^                      |
+      ]],
+      cmdline = { { content = { { '' } }, pos = 0, prompt = 'lua_debug> ' } },
+      cmdline_block = { { { 'lua_debug> print("foo")' } } },
+    })
+    feed('<Esc>')
+    screen:expect({
+      grid = [[
+        ^                         |
+        {1:~                        }|*3
+                                 |
+      ]],
+      cmdline = { { abort = true } },
+    })
+  end)
 end
 
 -- the representation of cmdline and cmdline_block contents changed with ext_linegrid
@@ -1636,5 +1699,12 @@ describe('cmdheight=0', function()
       {1:~                        }|*3
       {3:[No Name]                }|
     ]])
+  end)
+
+  it('no spurious newline before first message with --headless mode', function()
+    local p = n.spawn_wait({
+      args = { '--cmd', 'set cmdheight=0', '-c', 'echo 1', '+q' },
+    })
+    eq('1', p.stderr)
   end)
 end)

@@ -209,8 +209,9 @@ vim.o.aw = vim.o.autowrite
 vim.go.autowrite = vim.o.autowrite
 vim.go.aw = vim.go.autowrite
 
---- Like 'autowrite', but also used for commands ":edit", ":enew", ":quit",
---- ":qall", ":exit", ":xit", ":recover" and closing the Vim window.
+--- Like 'autowrite', but also used for commands ":edit", ":enew",
+--- ":quit", ":qall", ":exit", ":xit", ":recover" and closing the Vim
+--- window.
 --- Setting this option also implies that Vim behaves like 'autowrite' has
 --- been set.
 ---
@@ -753,6 +754,7 @@ vim.go.cdh = vim.go.cdhome
 --- ```vim
 ---   let &cdpath = ',' .. substitute(substitute($CDPATH, '[, ]', '\\\0', 'g'), ':', ',', 'g')
 --- ```
+--- Environment variables are expanded `:set_env`.
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 --- (parts of 'cdpath' can be passed to the shell to expand file names).
@@ -963,10 +965,7 @@ vim.go.cb = vim.go.clipboard
 --- used.  The command-line will cover the last line of the screen when
 --- shown.
 ---
---- WARNING: `cmdheight=0` is EXPERIMENTAL. Expect some unwanted behaviour.
---- Some 'shortmess' flags and similar mechanism might fail to take effect,
---- causing unwanted hit-enter prompts.  Some informative messages, both
---- from Nvim itself and plugins, will not be displayed.
+--- WARNING: `cmdheight=0` is EXPERIMENTAL. Works better with `ui2` enabled.
 ---
 --- @type integer
 vim.o.cmdheight = 1
@@ -1132,31 +1131,6 @@ vim.o.cfu = vim.o.completefunc
 vim.bo.completefunc = vim.o.completefunc
 vim.bo.cfu = vim.bo.completefunc
 
---- A comma-separated list of strings to enable fuzzy collection for
---- specific `ins-completion` modes, affecting how matches are gathered
---- during completion.  For specified modes, fuzzy matching is used to
---- find completion candidates instead of the standard prefix-based
---- matching.  This option can contain the following values:
----
---- keyword		keywords in the current file	`i_CTRL-X_CTRL-N`
---- 		keywords with flags ".", "w",	`i_CTRL-N` `i_CTRL-P`
---- 		"b", "u", "U" and "k{dict}" in 'complete'
---- 		keywords in 'dictionary'	`i_CTRL-X_CTRL-K`
----
---- files		file names			`i_CTRL-X_CTRL-F`
----
---- whole_line	whole lines			`i_CTRL-X_CTRL-L`
----
---- When using the 'completeopt' "longest" option value, fuzzy collection
---- can identify the longest common string among the best fuzzy matches
---- and insert it automatically.
----
---- @type string
-vim.o.completefuzzycollect = ""
-vim.o.cfc = vim.o.completefuzzycollect
-vim.go.completefuzzycollect = vim.o.completefuzzycollect
-vim.go.cfc = vim.go.completefuzzycollect
-
 --- A comma-separated list of strings that controls the alignment and
 --- display order of items in the popup menu during Insert mode
 --- completion.  The supported values are "abbr", "kind", and "menu".
@@ -1176,16 +1150,13 @@ vim.go.cia = vim.go.completeitemalign
 ---    fuzzy    Enable `fuzzy-matching` for completion candidates.  This
 --- 	    allows for more flexible and intuitive matching, where
 --- 	    characters can be skipped and matches can be found even
---- 	    if the exact sequence is not typed.  Note: This option
---- 	    does not affect the collection of candidate list, it only
---- 	    controls how completion candidates are reduced from the
---- 	    list of alternatives.  If you want to use `fuzzy-matching`
---- 	    to gather more alternatives for your candidate list,
---- 	    see 'completefuzzycollect'.
+--- 	    if the exact sequence is not typed (disabled for thesaurus
+--- 	    completion `compl-thesaurus`).
 ---
 ---    longest
 --- 	    When 'autocomplete' is not active, only the longest common
---- 	    prefix of the matches is inserted.  If the popup menu is
+--- 	    prefix of the matches is inserted (disabled for thesaurus
+--- 	    completion `compl-thesaurus`).  If the popup menu is
 --- 	    displayed, you can use CTRL-L to add more characters.
 --- 	    Whether case is ignored depends on the type of completion.
 --- 	    For buffer text the 'ignorecase' option applies.
@@ -1430,8 +1401,9 @@ vim.bo.ci = vim.bo.copyindent
 --- 		This makes "y0" fail in the first column.
 --- 							*cpo-f*
 --- 	f	When included, a ":read" command with a file name
---- 		argument will set the file name for the current buffer,
---- 		if the current buffer doesn't have a file name yet.
+--- 		argument will set the file name for the current
+--- 		buffer, if the current buffer doesn't have a file name
+--- 		yet.
 --- 							*cpo-F*
 --- 	F	When included, a ":write" command with a file name
 --- 		argument will set the file name for the current
@@ -1752,6 +1724,7 @@ vim.go.deco = vim.go.delcombine
 --- To include a comma in a file name precede it with a backslash.  Spaces
 --- after a comma are ignored, otherwise spaces are included in the file
 --- name.  See `option-backslash` about using backslashes.
+--- Environment variables are expanded `:set_env`.
 --- This has nothing to do with the `Dictionary` variable type.
 --- Where to find a list of words?
 --- - BSD/macOS include the "/usr/share/dict/words" file.
@@ -1864,8 +1837,8 @@ vim.go.dex = vim.go.diffexpr
 --- 	hiddenoff	Do not use diff mode for a buffer when it
 --- 			becomes hidden.
 ---
---- 	iblank		Ignore changes where lines are all blank.  Adds
---- 			the "-B" flag to the "diff" command if
+--- 	iblank		Ignore changes where lines are all blank.
+--- 			Adds the "-B" flag to the "diff" command if
 --- 			'diffexpr' is empty.  Check the documentation
 --- 			of the "diff" command for what this does
 --- 			exactly.
@@ -1897,14 +1870,18 @@ vim.go.dex = vim.go.diffexpr
 --- 				difference.  Non-alphanumeric
 --- 				multi-byte characters such as emoji
 --- 				and CJK characters are considered
---- 				individual words.
+--- 				individual words.  Small gaps of
+--- 				non-word characters (5 bytes or less)
+--- 				between changes are merged into a
+--- 				single highlight block.
 ---
 --- 	internal	Use the internal diff library.  This is
 --- 			ignored when 'diffexpr' is set.  *E960*
 --- 			When running out of memory when writing a
---- 			buffer this item will be ignored for diffs
---- 			involving that buffer.  Set the 'verbose'
---- 			option to see when this happens.
+--- 			buffer or the diff is larger than 1 GB this
+--- 			item will be ignored for diffs involving that
+--- 			buffer.  Set the 'verbose' option to see when
+--- 			this happens.
 ---
 --- 	iwhite		Ignore changes in amount of white space.  Adds
 --- 			the "-b" flag to the "diff" command if
@@ -2241,6 +2218,7 @@ vim.go.ei = vim.go.eventignore
 --- 	`LspProgress`,
 --- 	`LspRequest`,
 --- 	`LspTokenUpdate`,
+--- 	`MarkSet`,
 --- 	`MenuPopup`,
 --- 	`ModeChanged`,
 --- 	`OptionSet`,
@@ -2253,6 +2231,7 @@ vim.go.ei = vim.go.eventignore
 --- 	`RemoteReply`,
 --- 	`SafeState`,
 --- 	`SessionLoadPost`,
+--- 	`SessionLoadPre`,
 --- 	`SessionWritePost`,
 --- 	`ShellCmdPost`,
 --- 	`Signal`,
@@ -2265,6 +2244,7 @@ vim.go.ei = vim.go.eventignore
 --- 	`SwapExists`,
 --- 	`Syntax`,
 --- 	`TabClosed`,
+--- 	`TabClosedPre`,
 --- 	`TabEnter`,
 --- 	`TabLeave`,
 --- 	`TabNew`,
@@ -2284,7 +2264,8 @@ vim.go.ei = vim.go.eventignore
 --- 	`VimResized`,
 --- 	`VimResume`,
 --- 	`VimSuspend`,
---- 	`WinNew`
+--- 	`WinNew`,
+--- 	`WinNewPre`
 ---
 --- @type string
 vim.o.eventignorewin = ""
@@ -2475,9 +2456,9 @@ vim.bo.ff = vim.bo.fileformat
 ---   edit a file, a check is done for the <EOL>:
 ---   1. If all lines end in <CR><NL>, and 'fileformats' includes "dos",
 ---      'fileformat' is set to "dos".
----   2. If a <NL> is found and 'fileformats' includes "unix", 'fileformat'
----      is set to "unix".  Note that when a <NL> is found without a
----      preceding <CR>, "unix" is preferred over "dos".
+---   2. If a <NL> is found and 'fileformats' includes "unix",
+---      'fileformat' is set to "unix".  Note that when a <NL> is found
+---      without a preceding <CR>, "unix" is preferred over "dos".
 ---   3. If 'fileformat' has not yet been set, and if a <CR> is found, and
 ---      if 'fileformats' includes "mac", 'fileformat' is set to "mac".
 ---      This means that "mac" is only chosen when:
@@ -3028,40 +3009,24 @@ vim.go.fp = vim.go.formatprg
 --- - system signals low battery life
 --- - Nvim exits abnormally
 ---
+--- This is a `global-local` option, so it can be set per buffer, for
+--- example when writing to a slow filesystem.
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 ---
 --- @type boolean
 vim.o.fsync = true
 vim.o.fs = vim.o.fsync
+vim.bo.fsync = vim.o.fsync
+vim.bo.fs = vim.bo.fsync
 vim.go.fsync = vim.o.fsync
 vim.go.fs = vim.go.fsync
-
---- When on, the ":substitute" flag 'g' is default on.  This means that
---- all matches in a line are substituted instead of one.  When a 'g' flag
---- is given to a ":substitute" command, this will toggle the substitution
---- of all or one match.  See `complex-change`.
----
---- 	command		'gdefault' on	'gdefault' off	~
---- 	:s///		  subst. all	  subst. one
---- 	:s///g		  subst. one	  subst. all
---- 	:s///gg		  subst. all	  subst. one
----
---- NOTE: Setting this option may break plugins that rely on the default
---- behavior of the 'g' flag.  This will also make the 'g' flag have the
---- opposite effect of that documented in `:s_g`.
----
---- @type boolean
-vim.o.gdefault = false
-vim.o.gd = vim.o.gdefault
-vim.go.gdefault = vim.o.gdefault
-vim.go.gd = vim.go.gdefault
 
 --- Format to recognize for the ":grep" command output.
 --- This is a scanf-like string that uses the same format as the
 --- 'errorformat' option: see `errorformat`.
 ---
---- If ripgrep ('grepprg') is available, this option defaults to `%f:%l:%c:%m`.
+--- Defaults to "%f:%l:%c:%m" if ripgrep ('grepprg') is available.
 ---
 --- @type string
 vim.o.grepformat = "%f:%l:%m,%f:%l%m,%f  %l%m"
@@ -3071,28 +3036,34 @@ vim.bo.gfm = vim.bo.grepformat
 vim.go.grepformat = vim.o.grepformat
 vim.go.gfm = vim.go.grepformat
 
---- Program to use for the `:grep` command.  This option may contain '%'
---- and '#' characters, which are expanded like when used in a command-
---- line.  The placeholder "$*" is allowed to specify where the arguments
---- will be included.  Environment variables are expanded `:set_env`.  See
---- `option-backslash` about including spaces and backslashes.
+--- Program to use for the `:grep` command.
+--- Note: if you change this then you must also update 'grepformat'.
+---
+--- May contain "%" and "#" characters, are expanded per `cmdline-special`.
+--- The placeholder "$*" specifies where the arguments will be included.
+--- Environment variables are expanded `:set_env`.  See `option-backslash`
+--- about including spaces and backslashes.
+---
 --- Special value: When 'grepprg' is set to "internal" the `:grep` command
 --- works like `:vimgrep`, `:lgrep` like `:lvimgrep`, `:grepadd` like
 --- `:vimgrepadd` and `:lgrepadd` like `:lvimgrepadd`.
---- See also the section `:make_makeprg`, since most of the comments there
---- apply equally to 'grepprg'.
+---
+--- See also `:make_makeprg`, most of the comments there apply to 'grepprg'.
+---
+--- Defaults to:
+--- - "rg --vimgrep -uu " if ripgrep is available (`:checkhealth`),
+--- - "grep -HIn $* /dev/null" on Unix,
+--- - "findstr /n $* nul" on Windows.
+---
+--- Ripgrep may perform additional filtering such as using .gitignore rules
+--- and skipping hidden files. This is disabled by default (via "-u") to
+--- more closely match the behaviour of standard grep.
+--- You can make ripgrep match Vim's case handling using the
+--- -i/--ignore-case and -S/--smart-case options. Handle `OptionSet` to
+--- dynamically update 'grepprg' when e.g. 'ignorecase' is changed.
+---
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
---- This option defaults to:
---- - `rg --vimgrep -uu ` if ripgrep is available (`:checkhealth`),
---- - `grep -HIn $* /dev/null` on Unix,
---- - `findstr /n $* nul` on Windows.
---- Ripgrep can perform additional filtering such as using .gitignore rules
---- and skipping hidden files. This is disabled by default (see the -u option)
---- to more closely match the behaviour of standard grep.
---- You can make ripgrep match Vim's case handling using the
---- -i/--ignore-case and -S/--smart-case options.
---- An `OptionSet` autocmd can be used to set it up to match automatically.
 ---
 --- @type string
 vim.o.grepprg = "grep -HIn $* /dev/null"
@@ -3194,6 +3165,7 @@ vim.go.gp = vim.go.grepprg
 ---
 --- ```vim
 ---     highlight Cursor gui=reverse guifg=NONE guibg=NONE
+---     " Note: gui=reverse overrides colors.
 ---     highlight Cursor gui=NONE guifg=bg guibg=fg
 --- ```
 ---
@@ -3275,7 +3247,7 @@ vim.go.gcr = vim.go.guicursor
 ---
 ---
 --- @type string
-vim.o.guifont = ""
+vim.o.guifont = "DFLT_GFN"
 vim.o.gfn = vim.o.guifont
 vim.go.guifont = vim.o.guifont
 vim.go.gfn = vim.go.guifont
@@ -3684,31 +3656,6 @@ vim.o.inf = vim.o.infercase
 vim.bo.infercase = vim.o.infercase
 vim.bo.inf = vim.bo.infercase
 
---- Defines characters and patterns for completion in insert mode.  Used
---- by the `complete_match()` function to determine the starting position
---- for completion.  This is a comma-separated list of triggers.  Each
---- trigger can be:
---- - A single character like "." or "/"
---- - A sequence of characters like "->", "/*", or "/**"
----
---- Note: Use "\\," to add a literal comma as trigger character, see
---- `option-backslash`.
----
---- Examples:
----
---- ```vim
----     set isexpand=.,->,/*,\\,
---- ```
----
----
---- @type string
-vim.o.isexpand = ""
-vim.o.ise = vim.o.isexpand
-vim.bo.isexpand = vim.o.isexpand
-vim.bo.ise = vim.bo.isexpand
-vim.go.isexpand = vim.o.isexpand
-vim.go.ise = vim.go.isexpand
-
 --- The characters specified by this option are included in file names and
 --- path names.  Filenames are used for commands like "gf", "[i" and in
 --- the tags file.  It is also used for "\f" in a `pattern`.
@@ -3781,7 +3728,13 @@ vim.go.isi = vim.go.isident
 --- "w", "*", "[i", etc.  It is also used for "\k" in a `pattern`.  See
 --- 'isfname' for a description of the format of this option.  For '@'
 --- characters above 255 check the "word" character class (any character
---- that is not white space or punctuation).
+--- that is categorized as a letter, number or emoji according to the
+--- Unicode general category).
+---
+--- Note that there is a difference between the "\k" character class and
+--- the `word` motion.  The former matches any word character, while the
+--- latter stops at a change of the character class.
+---
 --- For C programs you could use "a-z,A-Z,48-57,_,.,-,>".
 --- For a help file it is set to all non-blank printable characters except
 --- "*", '"' and '|' (so that CTRL-] on a command finds the help for that
@@ -3846,11 +3799,11 @@ vim.go.js = vim.go.joinspaces
 --- 		jumping to a location.  `jumplist-stack`
 ---
 ---   view          When moving through the jumplist, `changelist`,
---- 		`alternate-file` or using `mark-motions` try to
---- 		restore the `mark-view` in which the action occurred.
+--- 		`alternate-file`, using `mark-motions` or when popping
+--- 		the `tagstack` try to restore the `mark-view` in which
+--- 		the action occurred.
 ---
 ---   clean         Remove unloaded buffers from the jumplist.
---- 		EXPERIMENTAL: this flag may change in the future.
 ---
 --- @type string
 vim.o.jumpoptions = "clean"
@@ -3886,20 +3839,27 @@ vim.go.keymodel = vim.o.keymodel
 vim.go.km = vim.go.keymodel
 
 --- Program to use for the `K` command.  Environment variables are
---- expanded `:set_env`.  ":help" may be used to access the Vim internal
---- help.  (Note that previously setting the global option to the empty
---- value did this, which is now deprecated.)
---- When the first character is ":", the command is invoked as a Vim
---- Ex command prefixed with [count].
---- When "man" or "man -s" is used, Vim will automatically translate
---- a [count] for the "K" command to a section number.
+--- expanded `:set_env`.
+---
+--- Special cases:
+--- - ":help" opens the `word` at cursor using `:help`.  (Note that
+---   previously setting the global option to the empty value did this,
+---   which is now deprecated.)
+--- - ":help!" performs `:help!` (DWIM) on the `WORD` at cursor.
+--- - If the value starts with ":", it is invoked as an Ex command
+---   prefixed with [count].
+--- - If "man" or "man -s", [count] is the manpage section number.
+---
 --- See `option-backslash` about including spaces and backslashes.
+---
 --- Example:
 ---
 --- ```vim
+--- 	set keywordprg=:help!
 --- 	set keywordprg=man\ -s
 --- 	set keywordprg=:Man
 --- ```
+---
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 ---
@@ -4103,9 +4063,8 @@ vim.go.lsp = vim.go.linespace
 
 --- Lisp mode: When <Enter> is typed in insert mode set the indent for
 --- the next line to Lisp standards (well, sort of).  Also happens with
---- "cc" or "S".  'autoindent' must also be on for this to work.  The 'p'
---- flag in 'cpoptions' changes the method of indenting: Vi compatible or
---- better.  Also see 'lispwords'.
+--- "cc" or "S".  'autoindent' must also be on for this to work.
+--- Also see 'lispwords'.
 --- The '-' character is included in keyword characters.  Redefines the
 --- "=" operator to use this same indentation algorithm rather than
 --- calling an external program if 'equalprg' is empty.
@@ -4151,7 +4110,7 @@ vim.go.lw = vim.go.lispwords
 --- position while displaying Tabs with spaces, use:
 ---
 --- ```vim
---- 	set list lcs=tab:\ \
+--- 	let &list = v:true | let &lcs = 'tab:  '
 --- ```
 ---
 --- Note that list mode will also affect formatting (set with 'textwidth'
@@ -4234,6 +4193,18 @@ vim.wo.list = vim.o.list
 ---
 --- 		Where "XXX" denotes the first non-blank characters in
 --- 		the line.
+--- 						*lcs-leadtab*
+---   leadtab:xy[z]
+--- 		Like `lcs-tab`, but only for leading tabs.  When
+--- 		omitted, the "tab" setting is used for leading tabs.
+--- 		`lcs-tab` must also be set for this to work. *E1572*
+--- 		You can combine it with "tab:", for example:
+---
+--- ```vim
+--- 			let &listchars = 'tab:>-,leadtab:. '
+--- ```
+--- This shows leading tabs as periods(.) and other tabs
+--- 		as ">--".
 --- 						*lcs-trail*
 ---   trail:c	Character to show for trailing spaces.  When omitted,
 --- 		trailing spaces are blank.  Overrides the "space" and
@@ -4298,18 +4269,6 @@ vim.o.lpl = vim.o.loadplugins
 vim.go.loadplugins = vim.o.loadplugins
 vim.go.lpl = vim.go.loadplugins
 
---- Changes the special characters that can be used in search patterns.
---- See `pattern`.
---- WARNING: Switching this option off most likely breaks plugins!  That
---- is because many patterns assume it's on and will fail when it's off.
---- Only switch it off when working with old Vi scripts.  In any other
---- situation write patterns that work when 'magic' is on.  Include "\M"
---- when you want to `/\M`.
----
---- @type boolean
-vim.o.magic = true
-vim.go.magic = vim.o.magic
-
 --- Name of the errorfile for the `:make` command (see `:make_makeprg`)
 --- and the `:grep` command.
 --- When it is empty, an internally generated temp file will be used.
@@ -4328,8 +4287,8 @@ vim.o.mef = vim.o.makeef
 vim.go.makeef = vim.o.makeef
 vim.go.mef = vim.go.makeef
 
---- Encoding used for reading the output of external commands.  When empty,
---- encoding is not converted.
+--- Encoding used for reading the output of external commands.  When
+--- empty, encoding is not converted.
 --- This is used for `:make`, `:lmake`, `:grep`, `:lgrep`, `:grepadd`,
 --- `:lgrepadd`, `:cfile`, `:cgetfile`, `:caddfile`, `:lfile`, `:lgetfile`,
 --- and `:laddfile`.
@@ -4451,7 +4410,7 @@ vim.go.mmd = vim.go.maxmapdepth
 --- behaves like CTRL-C was typed.
 --- Running into the limit often means that the pattern is very
 --- inefficient or too complex.  This may already happen with the pattern
---- "\(.\)*" on a very long line.  ".*" works much better.
+--- `\(.\)*` on a very long line.  `.*` works much better.
 --- Might also happen on redraw, when syntax rules try to match a complex
 --- text structure.
 --- Vim may run out of memory before hitting the 'maxmempattern' limit, in
@@ -4467,7 +4426,8 @@ vim.go.mmp = vim.go.maxmempattern
 --- When the number of matches exceeds this value, Vim shows ">" instead
 --- of the exact count to keep searching fast.
 --- Note: larger values may impact performance.
---- The value must be between 1 and 9999.
+--- The value must be between 1 and 9999.  See also the `searchcount()`
+--- function.
 ---
 --- @type integer
 vim.o.maxsearchcount = 999
@@ -4488,24 +4448,29 @@ vim.go.mis = vim.go.menuitems
 --- Option settings for outputting messages.  It can consist of the
 --- following items.  Items must be separated by a comma.
 ---
---- hit-enter	Use a `hit-enter` prompt when the message is longer than
---- 		'cmdheight' size.
----
---- wait:{n}	Instead of using a `hit-enter` prompt, simply wait for
---- 		{n} milliseconds so that the user has a chance to read
---- 		the message.  The maximum value of {n} is 10000.  Use
---- 		0 to disable the wait (but then the user may miss an
---- 		important message).
---- 		This item is ignored when "hit-enter" is present, but
---- 		required when "hit-enter" is not present.
----
 --- history:{n}	Determines how many entries are remembered in the
 --- 		`:messages` history.  The maximum value is 10000.
 --- 		Setting it to zero clears the message history.
 --- 		This item must always be present.
 ---
+--- hit-enter	Use a `hit-enter` prompt when the message is longer than
+--- 		'cmdheight' size.
+---
+--- progress:{s}	Determines where to show progress messages.
+--- 		Valid values are:
+--- 		  - empty: Progress messages not shown in cmdline.
+--- 		  - "c": Progress messages are shown in cmdline.
+---
+--- wait:{n}	Deprecated with `ui2`.
+--- 		Instead of a `hit-enter` prompt, simply wait for {n}
+--- 		milliseconds so the user has a chance to read the
+--- 		message.  Maximum {n} is 10000.  Use 0 to disable the
+--- 		wait (user won't see any "hit-enter" messages).
+--- 		Ignored when "hit-enter" is present, but required when
+--- 		"hit-enter" is not present.
+---
 --- @type string
-vim.o.messagesopt = "hit-enter,history:500"
+vim.o.messagesopt = "hit-enter,history:500,progress:c"
 vim.o.mopt = vim.o.messagesopt
 vim.go.messagesopt = vim.o.messagesopt
 vim.go.mopt = vim.go.messagesopt
@@ -4547,7 +4512,7 @@ vim.go.mopt = vim.go.messagesopt
 --- ```
 --- If you have less than 512 Mbyte `:mkspell` may fail for some
 --- languages, no matter what you set 'mkspellmem' to.
----
+--- Environment variables are expanded `:set_env`.
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 ---
@@ -4617,8 +4582,13 @@ vim.bo.ma = vim.bo.modifiable
 --- result of a BufNewFile, BufRead/BufReadPost, BufWritePost,
 --- FileAppendPost or VimLeave autocommand event.  See `gzip-example` for
 --- an explanation.
---- When 'buftype' is "nowrite" or "nofile" this option may be set, but
+---
+--- When 'buftype' is "prompt", 'modified' is not implicitly set when the
+--- buffer is changed, but a user or plugin may explicitly set it.
+---
+--- When 'buftype' is "nowrite" or "nofile", this option may be set, but
 --- will be ignored.
+---
 --- Note that the text may actually be the same, e.g. 'modified' is set
 --- when using "rA" on an "A".
 ---
@@ -4931,6 +4901,7 @@ vim.go.opfunc = vim.go.operatorfunc
 
 --- Directories used to find packages.
 --- See `packages` and `packages-runtimepath`.
+--- Environment variables are expanded `:set_env`.
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 ---
@@ -5133,6 +5104,9 @@ vim.go.pb = vim.go.pumblend
 --- valid values. `hl-PmenuBorder` is used for highlighting the border, and when
 --- style is "shadow" the `hl-PmenuShadow` and `hl-PmenuShadowThrough` groups are used.
 ---
+--- This option also applies to mouse popup menus when 'mousemodel' is set to
+--- "popup" or "popup_setpos", which will display borders using the same style.
+---
 --- @type string
 vim.o.pumborder = ""
 vim.go.pumborder = vim.o.pumborder
@@ -5190,6 +5164,9 @@ vim.go.pyx = vim.go.pyxversion
 --- function and an example.  The value can be the name of a function, a
 --- `lambda` or a `Funcref`.  See `option-value-function` for more
 --- information.
+---
+--- It is not allowed to change text or jump to another window while
+--- evaluating 'qftf' `textlock`.
 ---
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
@@ -5489,6 +5466,9 @@ vim.go.ruf = vim.go.rulerformat
 --- to find files which add to distributed runtime files.
 ---
 --- With `--clean` the home directory entries are not included.
+--- Environment variables are expanded `:set_env`.
+--- This option cannot be set from a `modeline` or in the `sandbox`, for
+--- security reasons.
 ---
 --- @type string
 vim.o.runtimepath = "..."
@@ -5823,7 +5803,7 @@ vim.go.ssop = vim.go.sessionoptions
 --- security reasons.
 ---
 --- @type string
-vim.o.shada = "!,'100,<50,s10,h"
+vim.o.shada = "!,'100,<50,s10,h,r/tmp/,r/private/"
 vim.o.sd = vim.o.shada
 vim.go.shada = vim.o.shada
 vim.go.sd = vim.go.shada
@@ -5832,6 +5812,7 @@ vim.go.sd = vim.go.shada
 --- When equal to "NONE" no shada file will be read or written.
 --- This option can be set with the `-i` command line flag.  The `--clean`
 --- command line flag sets it to "NONE".
+--- Environment variables are expanded `:set_env`.
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 ---
@@ -5886,12 +5867,25 @@ vim.go.sdf = vim.go.shadafile
 --- To use PowerShell:
 ---
 --- ```vim
---- 	let &shell = executable('pwsh') ? 'pwsh' : 'powershell'
---- 	let &shellcmdflag = '-NoLogo -NonInteractive -ExecutionPolicy RemoteSigned -Command [Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new();$PSDefaultParameterValues[''Out-File:Encoding'']=''utf8'';$PSStyle.OutputRendering=''plaintext'';Remove-Alias -Force -ErrorAction SilentlyContinue tee;'
---- 	let &shellredir = '2>&1 | %%{ "$_" } | Out-File %s; exit $LastExitCode'
---- 	let &shellpipe  = '2>&1 | %%{ "$_" } | tee %s; exit $LastExitCode'
---- 	set shellquote= shellxquote=
+---    set noshelltemp
+---    let &shell = 'powershell'
+---    let &shellcmdflag = '-NoLogo -NoProfile -ExecutionPolicy RemoteSigned -Command '
+---    let &shellcmdflag .= '[Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new();'
+---    let &shellcmdflag .= '$PSDefaultParameterValues[''Out-File:Encoding'']=''utf8'';'
+---    let &shellpipe  = '> %s 2>&1'
+---    set shellquote= shellxquote=
 --- ```
+---
+--- 						*shell-pwsh*
+--- To use pwsh, use the above settings with `let &shell = 'pwsh'`, and
+--- add:
+---
+--- ```vim
+---    let &shellcmdflag .= '$PSStyle.OutputRendering = ''PlainText'';'
+---    " Workaround (may not be needed in future version of pwsh):
+---    let $__SuppressAnsiEscapeSequences = 1
+--- ```
+---
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 ---
@@ -6137,7 +6131,8 @@ vim.bo.sw = vim.bo.shiftwidth
 --- 	"search hit TOP, continuing at BOTTOM" messages are only
 --- 	indicated by a "W" (Mnemonic: Wrapped) letter before the
 --- 	search count statistics.  The maximum limit can be set with
---- 	the 'maxsearchcount' option.
+--- 	the 'maxsearchcount' option, see also `searchcount()`
+--- 	function.
 ---
 --- This gives you the opportunity to avoid that a change between buffers
 --- requires you to hit <Enter>, but still gives as useful a message as
@@ -6434,11 +6429,11 @@ vim.wo.sms = vim.wo.smoothscroll
 --- different values, you might consider setting 'smarttab'.
 ---
 --- The 'L' flag in 'cpoptions' alters tab behavior when 'list' is
---- enabled.  See also `ins-expandtab` ans user manual section `30.5` for
+--- enabled.  See also `ins-expandtab` and user manual section `30.5` for
 --- in-depth explanations.
 ---
---- The value of 'softtabstop' will be ignored if 'varsofttabstop' is set to
---- anything other than an empty string.
+--- The value of 'softtabstop' will be ignored if 'varsofttabstop' is set
+--- to anything other than an empty string.
 ---
 --- @type integer
 vim.o.softtabstop = 0
@@ -6487,6 +6482,7 @@ vim.bo.spc = vim.bo.spellcapcheck
 --- name if you want to.  However, it will then only be used when
 --- 'spellfile' is set to it, for entries in 'spelllang' only files
 --- without region name will be found.
+--- Environment variables are expanded `:set_env`.
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 ---
@@ -6527,7 +6523,7 @@ vim.bo.spf = vim.bo.spellfile
 --- encoding is used, Vim doesn't check it.
 --- How the related spell files are found is explained here: `spell-load`.
 ---
---- If the `spellfile.vim` plugin is active and you use a language name
+--- If the `package-spellfile` plugin is active and you use a language name
 --- for which Vim cannot find the .spl file in 'runtimepath' the plugin
 --- will ask you if you want to download the file.
 ---
@@ -6623,7 +6619,7 @@ vim.bo.spo = vim.bo.spelloptions
 --- ```vim
 --- 	set sps=file:~/.config/nvim/sugg,best,expr:MySuggest()
 --- ```
----
+--- Environment variables are expanded `:set_env`.
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 ---
@@ -6771,10 +6767,10 @@ vim.wo.stc = vim.wo.statuscolumn
 --- current window and buffer, while %{} items are evaluated in the
 --- context of the window that the statusline belongs to.
 ---
---- When there is error while evaluating the option then it will be made
---- empty to avoid further errors.  Otherwise screen updating would loop.
---- When the result contains unprintable characters the result is
---- unpredictable.
+--- When there is an error while evaluating the option it will be reset to
+--- its default value to avoid further errors.  Otherwise screen updating
+--- would loop.  When the result contains unprintable characters the
+--- result is unpredictable.
 ---
 --- Note that the only effect of 'ruler' when this option is set (and
 --- 'laststatus' is 2 or 3) is controlling the output of `CTRL-G`.
@@ -6902,10 +6898,13 @@ vim.wo.stc = vim.wo.statuscolumn
 ---       Thus use %#HLname# for highlight group HLname.  The same
 ---       highlighting is used, also for the statusline of non-current
 ---       windows.
+--- $ -   Same as `#`, except the `%$HLname$` group will inherit from
+---       preceding highlight attributes.
 --- * -   Set highlight group to User{N}, where {N} is taken from the
----       minwid field, e.g. %1*.  Restore normal highlight with %* or %0*.
----       The difference between User{N} and StatusLine will be applied to
----       StatusLineNC for the statusline of non-current windows.
+---       minwid field, e.g. %1*.  Restore normal highlight with %* or
+---       %0*.  The difference between User{N} and StatusLine will be
+---       applied to StatusLineNC for the statusline of non-current
+---       windows.
 ---       The number N must be between 1 and 9.  See `hl-User1..9`
 ---
 --- When displaying a flag, Vim removes the leading comma, if any, when
@@ -6991,7 +6990,7 @@ vim.wo.stc = vim.wo.statuscolumn
 ---
 ---
 --- @type string
-vim.o.statusline = "%<%f %h%w%m%r %=%{% &showcmdloc == 'statusline' ? '%-10.S ' : '' %}%{% exists('b:keymap_name') ? '<'..b:keymap_name..'> ' : '' %}%{% &busy > 0 ? '◐ ' : '' %}%(%{luaeval('(package.loaded[''vim.diagnostic''] and vim.diagnostic.status()) or '''' ')} %)%{% &ruler ? ( &rulerformat == '' ? '%-14.(%l,%c%V%) %P' : &rulerformat ) : '' %}"
+vim.o.statusline = "%<%f %h%w%m%r %{% v:lua.require('vim._core.util').term_exitcode() %}%=%{% luaeval('(package.loaded[''vim.ui''] and vim.api.nvim_get_current_win() == tonumber(vim.g.actual_curwin or -1) and vim.ui.progress_status()) or '''' ')%}%{% &showcmdloc == 'statusline' ? '%-10.S ' : '' %}%{% exists('b:keymap_name') ? '<'..b:keymap_name..'> ' : '' %}%{% &busy > 0 ? '◐ ' : '' %}%{% luaeval('(package.loaded[''vim.diagnostic''] and next(vim.diagnostic.count()) and vim.diagnostic.status() .. '' '') or '''' ') %}%{% &ruler ? ( &rulerformat == '' ? '%-14.(%l,%c%V%) %P' : &rulerformat ) : '' %}"
 vim.o.stl = vim.o.statusline
 vim.wo.statusline = vim.o.statusline
 vim.wo.stl = vim.wo.statusline
@@ -7438,8 +7437,9 @@ vim.bo.tw = vim.bo.textwidth
 --- name.  See `option-backslash` about using backslashes.  The use of
 --- `:set+=` and `:set-=` is preferred when adding or removing directories
 --- from the list.  This avoids problems when a future version uses
---- another default.  Backticks cannot be used in this option for security
---- reasons.
+--- another default.
+--- Environment variables are expanded `:set_env`.
+--- Backticks cannot be used in this option for security reasons.
 ---
 --- @type string
 vim.o.thesaurus = ""
@@ -7492,10 +7492,14 @@ vim.o.tm = vim.o.timeoutlen
 vim.go.timeoutlen = vim.o.timeoutlen
 vim.go.tm = vim.go.timeoutlen
 
---- When on, the title of the window will be set to the value of
---- 'titlestring' (if it is not empty), or to:
+--- If enabled, Nvim will update the (GUI or terminal) window title. The
+--- format is configured by 'titlestring'. By default it looks like:
+--- ```
 --- 	filename [+=-] (path) - Nvim
---- Where:
+--- ```
+---
+--- where:
+--- ```
 --- 	filename	the name of the file being edited
 --- 	-		indicates the file cannot be modified, 'ma' off
 --- 	+		indicates the file was modified
@@ -7503,6 +7507,8 @@ vim.go.tm = vim.go.timeoutlen
 --- 	=+		indicates the file is read-only and modified
 --- 	(path)		is the path of the file being edited
 --- 	- Nvim		the server name `v:servername` or "Nvim"
+--- ```
+---
 ---
 --- @type boolean
 vim.o.title = false
@@ -7531,21 +7537,17 @@ vim.go.titlelen = vim.o.titlelen
 vim.o.titleold = ""
 vim.go.titleold = vim.o.titleold
 
---- When this option is not empty, it will be used for the title of the
---- window.  This happens only when the 'title' option is on.
+--- Formats the window title, enabled by the 'title' option.
 ---
---- When this option contains printf-style '%' items, they will be
---- expanded according to the rules used for 'statusline'.  If it contains
---- an invalid '%' format, the value is used as-is and no error or warning
---- will be given when the value is set.
+--- Contains printf-style "%" items, expanded according to the rules of
+--- 'statusline'.  If a "%" format is invalid, it is used as-is and no
+--- error will be given.
 ---
---- The default behaviour is equivalent to:
+--- The default (empty) behaviour is equivalent to:
 ---
 --- ```vim
 ---     set titlestring=%t%(\ %M%)%(\ \(%{expand(\"%:~:h\")}\)%)%a\ -\ Nvim
 --- ```
----
---- This option cannot be set in a modeline when 'modelineexpr' is off.
 ---
 --- Example:
 ---
@@ -7553,18 +7555,22 @@ vim.go.titleold = vim.o.titleold
 ---     auto BufEnter * let &titlestring = hostname() .. "/" .. expand("%:p")
 ---     set title titlestring=%<%F%=%l/%L-%P titlelen=70
 --- ```
---- The value of 'titlelen' is used to align items in the middle or right
---- of the available space.
---- Some people prefer to have the file name first:
+--- The value of 'titlelen' is used to align items in the middle
+--- or right of the available space.
+---
+--- Example: to have the file name first:
 ---
 --- ```vim
 ---     set titlestring=%t%(\ %M%)%(\ (%{expand(\"%:~:.:h\")})%)%(\ %a%)
 --- ```
---- Note the use of "%{ }" and an expression to get the path of the file,
---- without the file name.  The "%( %)" constructs are used to add a
+--- Note the use of "%{ }" and an expression to get the path of
+--- the file, without the file name.  The "%( %)" constructs add a
 --- separating space only when needed.
+---
 --- NOTE: Use of special characters in 'titlestring' may cause the display
 --- to be garbled (e.g., when it contains a CR or NL character).
+---
+--- This option cannot be set in a modeline when 'modelineexpr' is off.
 ---
 --- @type string
 vim.o.titlestring = ""
@@ -7610,6 +7616,7 @@ vim.go.ttm = vim.go.ttimeoutlen
 --- undo file that exists is used.  When it cannot be read an error is
 --- given, no further entry is used.
 --- See `undo-persistence`.
+--- Environment variables are expanded `:set_env`.
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 ---
@@ -7640,9 +7647,9 @@ vim.bo.udf = vim.bo.undofile
 
 --- Maximum number of changes that can be undone.  Since undo information
 --- is kept in memory, higher numbers will cause more memory to be used.
---- Nevertheless, a single change can already use a large amount of memory.
---- Set to 0 for Vi compatibility: One level of undo and "u" undoes
---- itself:
+--- Nevertheless, a single change can already use a large amount of
+--- memory.  Set to 0 for Vi compatibility: One level of undo and "u"
+--- undoes itself:
 ---
 --- ```vim
 --- 	set ul=0
@@ -7803,6 +7810,7 @@ vim.go.vbs = vim.go.verbose
 --- Setting 'verbosefile' to a new value is like making it empty first.
 --- The difference with `:redir` is that verbose messages are not
 --- displayed when 'verbosefile' is set.
+--- Environment variables are expanded `:set_env`.
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 ---
@@ -7813,6 +7821,7 @@ vim.go.verbosefile = vim.o.verbosefile
 vim.go.vfile = vim.go.verbosefile
 
 --- Name of the directory where to store files for `:mkview`.
+--- Environment variables are expanded `:set_env`.
 --- This option cannot be set from a `modeline` or in the `sandbox`, for
 --- security reasons.
 ---
@@ -7957,10 +7966,11 @@ vim.go.wildchar = vim.o.wildchar
 vim.go.wc = vim.go.wildchar
 
 --- 'wildcharm' works exactly like 'wildchar', except that it is
---- recognized when used inside a macro.  You can find "spare" command-line
---- keys suitable for this option by looking at `ex-edit-index`.  Normally
---- you'll never actually type 'wildcharm', just use it in mappings that
---- automatically invoke completion mode, e.g.:
+--- recognized when used inside a macro.  You can find "spare"
+--- command-line keys suitable for this option by looking at
+--- `ex-edit-index`.  Normally you'll never actually type 'wildcharm',
+--- just use it in mappings that automatically invoke completion mode,
+--- e.g.:
 ---
 --- ```vim
 --- 	set wcm=<C-Z>

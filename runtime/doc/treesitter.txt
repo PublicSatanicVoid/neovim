@@ -548,7 +548,6 @@ When multiple captures set this metadata over a region, only the innermost
 
 ==============================================================================
 TREESITTER LANGUAGE INJECTIONS                *treesitter-language-injections*
-<
 
 Note the following information is adapted from:
 https://tree-sitter.github.io/tree-sitter/3-syntax-highlighting.html#language-injection
@@ -608,6 +607,27 @@ for large buffers. To disable injections for, e.g.,  `c`, just place an
 empty `queries/c/injections.scm` file in your 'runtimepath'.
 
 ==============================================================================
+DEFAULTS                                                 *treesitter-defaults*
+
+							*v_an*
+an			Selects [count]th parent node.
+
+			If buffer has no treesitter parser,
+			falls back to |vim.lsp.buf.selection_range()|.
+
+							*v_in*
+in			Selects [count]th previous (or first) child node.
+
+			If buffer has no treesitter parser,
+			falls back to |vim.lsp.buf.selection_range()|.
+
+							*v_]n*
+]n			Selects [count]th next node.
+
+							*v_[n*
+[n			Selects [count]th previous node.
+
+==============================================================================
 VIM.TREESITTER                                                *lua-treesitter*
 
 The remainder of this document is a reference manual for the `vim.treesitter`
@@ -651,8 +671,9 @@ TSTree:root()                                                  *TSTree:root()*
 TREESITTER NODES                                    *treesitter-node* *TSNode*
 
 A "treesitter node" represents one specific element of the parsed contents of
-a buffer, which can be captured by a |Query| for, e.g., highlighting. It is a
-|userdata| reference to an object held by the treesitter library.
+a buffer, which can be captured by a |treesitter-query| for, e.g.,
+highlighting. It is a |userdata| reference to an object held by the treesitter
+library.
 
 An instance `TSNode` of a treesitter node supports the following methods.
 
@@ -996,9 +1017,9 @@ get_node_range({node_or_range})              *vim.treesitter.get_node_range()*
 
     Return (multiple): ~
         (`integer`) start_row
-        (`integer`) start_col
+        (`integer`) start_col (byte offset)
         (`integer`) end_row
-        (`integer`) end_col
+        (`integer`) end_col (byte offset)
 
                                               *vim.treesitter.get_node_text()*
 get_node_text({node}, {source}, {opts})
@@ -1021,10 +1042,7 @@ get_parser({bufnr}, {lang}, {opts})              *vim.treesitter.get_parser()*
 
     If needed, this will create the parser.
 
-    If no parser can be created, an error is thrown. Set `opts.error = false`
-    to suppress this and return nil (and an error message) instead. WARNING:
-    This behavior will become default in Nvim 0.12 and the option will be
-    removed.
+    If no parser can be created, nil (and an error message) is returned.
 
     Parameters: ~
       • {bufnr}  (`integer?`) Buffer the parser should be tied to (default:
@@ -1145,9 +1163,9 @@ start({bufnr}, {lang})                                *vim.treesitter.start()*
 
     Example: >lua
         vim.api.nvim_create_autocmd( 'FileType', { pattern = 'tex',
-            callback = function(args)
-                vim.treesitter.start(args.buf, 'latex')
-                vim.bo[args.buf].syntax = 'ON'  -- only if additional legacy syntax is needed
+            callback = function(ev)
+                vim.treesitter.start(ev.buf, 'latex')
+                vim.bo[ev.buf].syntax = 'ON'  -- only if additional legacy syntax is needed
             end
         })
 <
@@ -1345,7 +1363,9 @@ LanguageTree:is_valid({exclude_children}, {range})
     Parameters: ~
       • {exclude_children}  (`boolean?`) whether to ignore the validity of
                             children (default `false`)
-      • {range}             (`Range?`) range to check for validity
+      • {range}             (`Range|Range[]?`) range (or list of ranges,
+                            sorted by starting point in ascending order) to
+                            check for validity
 
     Return: ~
         (`boolean`)
@@ -1421,11 +1441,12 @@ LanguageTree:parse({range}, {on_parse})                 *LanguageTree:parse()*
     if {range} is `true`).
 
     Parameters: ~
-      • {range}     (`boolean|Range?`) Parse this range in the parser's
-                    source. Set to `true` to run a complete parse of the
-                    source (Note: Can be slow!) Set to `false|nil` to only
-                    parse regions with empty ranges (typically only the root
-                    tree without injections).
+      • {range}     (`boolean|Range|Range[]?`) Parse this range (or list of
+                    ranges, sorted by starting point in ascending order) in
+                    the parser's source. Set to `true` to run a complete parse
+                    of the source (Note: Can be slow!) Set to `false|nil` to
+                    only parse regions with empty ranges (typically only the
+                    root tree without injections).
       • {on_parse}  (`fun(err?: string, trees?: table<integer, TSTree>)?`)
                     Function invoked when parsing completes. When provided and
                     `vim.g._ts_force_sync_parsing` is not set, parsing will
@@ -1468,10 +1489,10 @@ LanguageTree:register_cbs({cbs}, {recursive})
                      callbacks.
 
 LanguageTree:source()                                  *LanguageTree:source()*
-    Returns the source bufnr of the language tree.
+    Returns the source content of the language tree (bufnr or string).
 
     Return: ~
-        (`integer`)
+        (`integer|string`)
 
                                                *LanguageTree:tree_for_range()*
 LanguageTree:tree_for_range({range}, {opts})
@@ -1550,10 +1571,6 @@ add_directive({name}, {handler}, {opts})
       • {opts}     (`table`) A table with the following fields:
                    • {force}? (`boolean`) Override an existing predicate of
                      the same name
-                   • {all}? (`boolean`) Use the correct implementation of the
-                     match table where capture IDs map to a list of nodes
-                     instead of a single node. Defaults to true. This option
-                     will be removed in a future release.
 
                                         *vim.treesitter.query.add_predicate()*
 add_predicate({name}, {handler}, {opts})
@@ -1567,10 +1584,6 @@ add_predicate({name}, {handler}, {opts})
       • {opts}     (`table?`) A table with the following fields:
                    • {force}? (`boolean`) Override an existing predicate of
                      the same name
-                   • {all}? (`boolean`) Use the correct implementation of the
-                     match table where capture IDs map to a list of nodes
-                     instead of a single node. Defaults to true. This option
-                     will be removed in a future release.
 
 edit({lang})                                     *vim.treesitter.query.edit()*
     Opens a live editor to query the buffer you started from.
@@ -1579,9 +1592,9 @@ edit({lang})                                     *vim.treesitter.query.edit()*
     completes available parsers.
 
     If you move the cursor to a capture name ("@foo"), text matching the
-    capture is highlighted in the source buffer. The query editor is a scratch
-    buffer, use `:write` to save it. You can find example queries at
-    `$VIMRUNTIME/queries/`.
+    capture is highlighted with |hl-DiagnosticVirtualTextHint| in the source
+    buffer. The query editor is a scratch buffer, use `:write` to save it. You
+    can find example queries at `$VIMRUNTIME/queries/`.
 
     Parameters: ~
       • {lang}  (`string?`) language to open the query editor for. If omitted,
@@ -1787,11 +1800,6 @@ Query:iter_matches({node}, {source}, {start}, {stop}, {opts})
                     traversing too deep into a tree.
                   • match_limit (integer) Set the maximum number of
                     in-progress matches (Default: 256).
-                  • all (boolean) When `false` (default `true`), the returned
-                    table maps capture IDs to a single (last) node instead of
-                    the full list of matching nodes. This option is only for
-                    backward compatibility and will be removed in a future
-                    release.
 
     Return: ~
         (`fun(): integer, table<integer, TSNode[]>, vim.treesitter.query.TSMetadata, TSTree`)
@@ -1809,8 +1817,8 @@ set({lang}, {query_name}, {text})                 *vim.treesitter.query.set()*
           'c',
           'highlights',
           [[;inherits c
-          (identifier) @spell]])
-        ]])
+          (identifier) @spell]]
+        )
 <
 
     Parameters: ~

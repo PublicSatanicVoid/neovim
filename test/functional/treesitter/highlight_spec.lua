@@ -978,6 +978,26 @@ describe('treesitter highlighting (C)', function()
       ]],
     })
   end)
+
+  it('#35575', function()
+    -- Window size is 14x14, and first string literal ends at byte 14
+    -- See: https://github.com/neovim/neovim/pull/35587
+    screen:try_resize(14, 15)
+
+    exec_lua(function()
+      local line = 'A a="\240\157\158\140\240\157\158\140" "aaaaaaaaaaaaaaaaaaaaaaaa";'
+      vim.api.nvim_buf_set_lines(0, 0, -1, true, { line })
+      vim.cmd('set nowrap')
+      vim.treesitter.query.set('c', 'highlights', hl_query_c)
+      vim.treesitter.start(0, 'c')
+    end)
+
+    screen:expect([[
+      {6:^A} a={26:"𝞌𝞌"} {26:"aaaa}|
+      {1:~             }|*13
+                    |
+    ]])
+  end)
 end)
 
 describe('treesitter highlighting (lua)', function()
@@ -1443,7 +1463,7 @@ end)
 
 it('no nil index for missing highlight query', function()
   clear()
-  local cqueries = vim.uv.cwd() .. '/runtime/queries/c/'
+  local cqueries = t.paths.test_source_path .. '/runtime/queries/c/'
   os.rename(cqueries .. 'highlights.scm', cqueries .. '_highlights.scm')
   finally(function()
     os.rename(cqueries .. '_highlights.scm', cqueries .. 'highlights.scm')
@@ -1452,4 +1472,24 @@ it('no nil index for missing highlight query', function()
     local parser = vim.treesitter.get_parser(0, 'c')
     vim.treesitter.highlighter.new(parser)
   ]])
+end)
+
+it('spell navigation correctly wraps back to the first line (Row 0) #36970', function()
+  clear()
+  insert([[
+mispelledone
+mispelledtwo]])
+
+  command('set spell')
+  command('set wrapscan')
+  exec_lua(function()
+    vim.treesitter.start(0, 'markdown')
+  end)
+
+  api.nvim_win_set_cursor(0, { 2, 0 })
+
+  feed(']s')
+
+  local pos = api.nvim_win_get_cursor(0)
+  eq(1, pos[1], 'Should have wrapped back to Line 1')
 end)

@@ -116,31 +116,36 @@ typedef struct {
 
 typedef struct {
   OptionalKeys is_set__win_config_;
-  Float row;
-  Float col;
-  Integer width;
-  Integer height;
-  Enum("NW", "NE", "SW", "SE") anchor;
-  Enum("cursor", "editor", "laststatus", "mouse", "tabline", "win") relative;
-  Enum("left", "right", "above", "below") split;
-  Window win;
-  ArrayOf(Integer) bufpos;
   Boolean external;
+  Boolean fixed;
   Boolean focusable;
-  Boolean mouse;
-  Boolean vertical;
-  Integer zindex;
-  Union(ArrayOf(String), Enum("none", "single", "double", "rounded", "solid", "shadow")) border;
-  Object title;
-  Enum("center", "left", "right") title_pos;
   Object footer;
   Enum("center", "left", "right") footer_pos;
-  Enum("minimal") style;
-  Boolean noautocmd;
-  Boolean fixed;
   Boolean hide;
+  Integer height;
+  Boolean mouse;
+  Enum("cursor", "editor", "laststatus", "mouse", "tabline", "win") relative;
+  Float row;
+  Enum("", "minimal") style;
+  Boolean noautocmd;
+  Boolean vertical;
+  Window win;
+  Integer width;
+  Integer zindex;
+  Enum("NW", "NE", "SW", "SE") anchor;
+  Union(Array, Enum("none", "single", "double", "rounded", "solid", "shadow")) border;
+  ArrayOf(Integer) bufpos;
+  Float col;
+  Enum("left", "right", "above", "below") split;
+  Object title;
+  Enum("center", "left", "right") title_pos;
   Integer _cmdline_offset;
 } Dict(win_config);
+
+typedef struct {
+  OptionalKeys is_set__tabpage_config_;
+  Integer after;
+} Dict(tabpage_config);
 
 typedef struct {
   Boolean is_lua;
@@ -168,20 +173,24 @@ typedef struct {
 
 typedef struct {
   OptionalKeys is_set__highlight_;
+  Boolean altfont;
+  Boolean blink;
   Boolean bold;
+  Boolean conceal;
+  Boolean dim;
+  Boolean italic;
+  Boolean nocombine;
+  Boolean overline;
+  Boolean reverse;
   Boolean standout;
   Boolean strikethrough;
-  Boolean underline;
   Boolean undercurl;
-  Boolean underdouble;
-  Boolean underdotted;
   Boolean underdashed;
-  Boolean italic;
-  Boolean reverse;
-  Boolean altfont;
-  Boolean nocombine;
+  Boolean underdotted;
+  Boolean underdouble;
+  Boolean underline;
   Boolean default_ DictKey(default);
-  Union(Integer, String) cterm;
+  DictAs(highlight_cterm) cterm;
   Union(Integer, String) foreground;
   Union(Integer, String) fg;
   Union(Integer, String) background;
@@ -197,6 +206,7 @@ typedef struct {
   Boolean fg_indexed;
   Boolean bg_indexed;
   Boolean force;
+  Boolean update;
   String url;
 } Dict(highlight);
 
@@ -212,6 +222,10 @@ typedef struct {
   Boolean italic;
   Boolean reverse;
   Boolean altfont;
+  Boolean dim;
+  Boolean blink;
+  Boolean conceal;
+  Boolean overline;
   Boolean nocombine;
 } Dict(highlight_cterm);
 
@@ -344,6 +358,7 @@ typedef struct {
   String title;
   String status;
   Integer percent;
+  String source;
   DictOf(Object) data;
 } Dict(echo_opts);
 

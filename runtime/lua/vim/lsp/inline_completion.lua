@@ -15,8 +15,13 @@
 --- 2. Define a config, (or copy `lsp/copilot.lua` from https://github.com/neovim/nvim-lspconfig):
 ---    ```lua
 ---    vim.lsp.config('copilot', {
----      cmd = { 'copilot-language-server', '--stdio', },
+---      cmd = { 'copilot-language-server', '--stdio' },
 ---      root_markers = { '.git' },
+---       init_options = {
+---         editorInfo = {
+---           name = 'Neovim', version = tostring(vim.version()) },
+---           editorPluginInfo = { name = 'Neovim', version = tostring(vim.version()) },
+---         },
 ---    })
 ---    ```
 --- 3. Activate the config:
@@ -92,6 +97,7 @@ end
 
 ---@package
 function Completor:destroy()
+  self:reset_timer()
   api.nvim_buf_clear_namespace(self.bufnr, namespace, 0, -1)
   api.nvim_del_augroup_by_id(self.augroup)
   self.active[self.bufnr] = nil
@@ -118,10 +124,10 @@ end
 ---@param ctx lsp.HandlerContext
 function Completor:handler(err, result, ctx)
   if err then
-    log.error('inlinecompletion', err)
+    log.error('inline_completion', err)
     return
   end
-  if not result then
+  if not result or not vim.startswith(api.nvim_get_mode().mode, 'i') then
     return
   end
 
@@ -213,9 +219,12 @@ function Completor:show(hint)
     table.insert(lines[#lines], { hint, 'ComplHintMore' })
   end
 
-  local pos = current.range and current.range.start:to_extmark()
-    or vim.pos.cursor(api.nvim_win_get_cursor(vim.fn.bufwinid(self.bufnr))):to_extmark()
-  local row, col = unpack(pos)
+  local row, col ---@type integer, integer
+  if current.range then
+    row, col = current.range:to_extmark()
+  else
+    row, col = vim.pos.cursor(api.nvim_win_get_cursor(vim.fn.bufwinid(self.bufnr))):to_extmark()
+  end
 
   -- To ensure that virtual text remains visible continuously (without flickering)
   -- while the user is editing the buffer, we allow displaying expired virtual text.
@@ -236,7 +245,7 @@ function Completor:show(hint)
   -- At least, characters before the cursor should be skipped.
   if api.nvim_win_get_buf(winid) == self.bufnr then
     local cursor_row, cursor_col =
-      unpack(vim.pos.cursor(api.nvim_win_get_cursor(winid)):to_extmark())
+      vim.pos.cursor(api.nvim_win_get_cursor(winid), { buf = self.bufnr }):to_extmark()
     if row == cursor_row then
       skip = math.max(skip, cursor_col - col + 1)
     end
@@ -248,7 +257,7 @@ function Completor:show(hint)
   api.nvim_buf_set_extmark(self.bufnr, namespace, row, col, {
     virt_text = virt_text,
     virt_lines = virt_lines,
-    virt_text_pos = current.range and 'overlay' or 'inline',
+    virt_text_pos = (current.range and not current.range:is_empty() and 'overlay') or 'inline',
     hl_mode = 'combine',
   })
 end
@@ -332,21 +341,16 @@ end
 function Completor:accept(item)
   local insert_text = item.insert_text
   if type(insert_text) == 'string' then
-    local range = item.range
-    if range then
+    if item.range then
+      local start_row, start_col, end_row, end_col = item.range:to_extmark()
       local lines = vim.split(insert_text, '\n')
-      api.nvim_buf_set_text(
-        self.bufnr,
-        range.start.row,
-        range.start.col,
-        range.end_.row,
-        range.end_.col,
-        lines
-      )
-      local pos = item.range.start:to_cursor()
-      api.nvim_win_set_cursor(vim.fn.bufwinid(self.bufnr), {
-        pos[1] + #lines - 1,
-        (#lines == 1 and pos[2] or 0) + #lines[#lines],
+      api.nvim_buf_set_text(self.bufnr, start_row, start_col, end_row, end_col, lines)
+      local win = api.nvim_get_current_win()
+      win = api.nvim_win_get_buf(win) == self.bufnr and win or vim.fn.bufwinid(self.bufnr)
+      local row, col = item.range:to_cursor()
+      api.nvim_win_set_cursor(win, {
+        row + #lines - 1,
+        (#lines == 1 and col or 0) + #lines[#lines],
       })
     else
       api.nvim_paste(insert_text, false, 0)
@@ -436,10 +440,12 @@ end
 --- (default: 0)
 ---@field bufnr? integer
 ---
---- Accept handler, called with the accepted item.
---- If not provided, the default handler is used,
---- which applies changes to the buffer based on the completion item.
----@field on_accept? fun(item: vim.lsp.inline_completion.Item)
+--- A callback triggered when a completion item is accepted.
+--- You can use it to modify the completion item that is about to be accepted
+--- and return it to apply the changes,
+--- or return `nil` to prevent the changes from being applied to the buffer
+--- so you can implement custom behavior.
+---@field on_accept? fun(item: vim.lsp.inline_completion.Item): vim.lsp.inline_completion.Item?
 
 --- Accept the currently displayed completion candidate to the buffer.
 ---
@@ -472,8 +478,13 @@ function M.get(opts)
         return
       end
 
+      -- Note that we do not intend for `on_accept`
+      -- to take effect when there is no current item.
       if on_accept then
-        on_accept(item)
+        item = on_accept(item)
+        if item then
+          completor:accept(item)
+        end
       else
         completor:accept(item)
       end

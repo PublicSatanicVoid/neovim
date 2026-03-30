@@ -509,12 +509,14 @@ char *vim_strchr(const char *const string, const int c)
   if (c <= 0) {
     return NULL;
   } else if (c < 0x80) {
-    return strchr(string, c);
+    // NOLINTNEXTLINE(*-casting): remove once CI uses glibc 2.43
+    return (char *)strchr(string, c);
   } else {
     char u8char[MB_MAXBYTES + 1];
     const int len = utf_char2bytes(c, u8char);
     u8char[len] = NUL;
-    return strstr(string, u8char);
+    // NOLINTNEXTLINE(*-casting): remove once CI uses glibc 2.43
+    return (char *)strstr(string, u8char);
   }
 }
 
@@ -803,6 +805,10 @@ size_t vim_snprintf_safelen(char *str, size_t str_m, const char *fmt, ...)
   va_list ap;
   int str_l;
 
+  if (str_m == 0) {
+    return 0;
+  }
+
   va_start(ap, fmt);
   str_l = vim_vsnprintf_typval(str, str_m, fmt, ap, NULL);
   va_end(ap);
@@ -989,6 +995,11 @@ static char *format_typename(const char *type)
 static int adjust_types(const char ***ap_types, int arg, int *num_posarg, const char *type)
   FUNC_ATTR_NONNULL_ALL
 {
+  if (arg <= 0) {
+    semsg(_(e_invalid_format_specifier_str), type);
+    return FAIL;
+  }
+
   if (*ap_types == NULL || *num_posarg < arg) {
     const char **new_types = *ap_types == NULL
                              ? xcalloc((size_t)arg, sizeof(const char *))
@@ -1095,9 +1106,7 @@ static int parse_fmt_types(const char ***ap_types, int *num_posarg, const char *
 
   while (*p != NUL) {
     if (*p != '%') {
-      char *q = strchr(p + 1, '%');
-      size_t n = (q == NULL) ? strlen(p) : (size_t)(q - p);
-
+      size_t n = (size_t)(xstrchrnul(p + 1, '%') - p);
       p += n;
     } else {
       // allowed values: \0, h, l, L
@@ -2468,8 +2477,10 @@ static void byteidx_common(typval_T *argvars, typval_T *rettv, bool comp)
       if (c > 0xFFFF) {
         idx--;
       }
-    }
-    if (idx > 0) {
+      if (idx > 0) {
+        t += clen;
+      }
+    } else if (idx > 0) {
       t += ptr2len(t);
     }
   }
@@ -2993,7 +3004,7 @@ void f_utf16idx(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
     if (c > 0xFFFF) {
       len++;
     }
-    p += ptr2len(p);
+    p += clen;
     if (charidx) {
       idx--;
     }

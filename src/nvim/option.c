@@ -11,8 +11,9 @@
 //   - For a buffer string option, add code to check_buf_options().
 // - If it's a numeric option, add any necessary bounds checks to check_num_option_bounds().
 // - If it's a list of flags, add some code in do_set(), search for WW_ALL.
+// - If it depends on options values, add it to didset_string_options().
 // - Add documentation! "desc" in options.lua, and any other related places.
-// - Add an entry in runtime/optwin.vim.
+// - Add an entry in runtime/scripts/optwin.lua.
 
 #define IN_OPTION_C
 #include <assert.h>
@@ -111,6 +112,7 @@
 #include "nvim/undo_defs.h"
 #include "nvim/vim_defs.h"
 #include "nvim/window.h"
+#include "nvim/winfloat.h"
 
 #ifdef BACKSLASH_IN_FILENAME
 # include "nvim/arglist.h"
@@ -386,6 +388,7 @@ void set_init_1(bool clean_arg)
   curbuf->b_p_initialized = true;
   curbuf->b_p_ac = -1;
   curbuf->b_p_ar = -1;          // no local 'autoread' value
+  curbuf->b_p_fs = -1;          // no local 'fsync' value
   curbuf->b_p_ul = NO_LOCAL_UNDOLEVEL;
   check_buf_options(curbuf);
   check_win_options(curwin);
@@ -851,6 +854,206 @@ static void stropt_remove_val(const char *origval, char *newval, uint32_t flags,
   }
 }
 
+/// Find a comma-separated item in "src" that matches the key part of "key".
+/// The key is the part before ':'.  "keylen" is the length including ':'.
+/// Returns a pointer to the found item in "src", or NULL if not found.
+/// Sets "*itemlenp" to the length of the found item (up to ',' or NUL).
+static char *find_key_item(char *src, char *key, ptrdiff_t keylen, ptrdiff_t *itemlenp)
+{
+  char *p = src;
+
+  while (*p != NUL) {
+    // Check if this item starts with the same key
+    if ((p == src || *(p - 1) == ',') && strncmp(p, key, (size_t)keylen) == 0) {
+      // Find the end of this item
+      char *end = vim_strchr(p, ',');
+      if (end == NULL) {
+        end = p + strlen(p);
+      }
+      *itemlenp = end - p;
+      return p;
+    }
+    p++;
+  }
+  return NULL;
+}
+
+/// Remove one item of length "itemlen" at position "item" from comma-separated
+/// string "str" in-place.  Handles the comma before or after the item.
+static void remove_comma_item(const char *str, char *item, ptrdiff_t itemlen)
+{
+  if (item[itemlen] == ',') {
+    // Remove item and trailing comma
+    STRMOVE(item, item + itemlen + 1);
+  } else if (item > str && *(item - 1) == ',') {
+    // Last item: remove leading comma and item
+    STRMOVE(item - 1, item + itemlen);
+  } else {
+    // Only item
+    *item = NUL;
+  }
+}
+
+/// Remove all items matching "key" (with ':') from comma-separated string "str"
+/// in-place.  If "skip" is not NULL, the item at that position is kept.
+static void remove_key_item(char *str, char *key, ptrdiff_t keylen, const char *skip)
+{
+  ptrdiff_t itemlen;
+  char *found;
+
+  while ((found = find_key_item(str, key, keylen, &itemlen)) != NULL) {
+    if (found == skip) {
+      // Search for the next match after this one.
+      char *next = found + itemlen;
+      if (*next == ',') {
+        next++;
+      }
+      found = find_key_item(next, key, keylen, &itemlen);
+      if (found == NULL) {
+        break;
+      }
+    }
+
+    remove_comma_item(str, found, itemlen);
+  }
+}
+
+/// Append a comma-separated item to the end of "str" in-place.
+/// Adds a comma before the item if "str" is not empty.
+static void append_item(char *str, char *item, ptrdiff_t item_len)
+{
+  ptrdiff_t len = (ptrdiff_t)strlen(str);
+
+  if (len > 0) {
+    str[len++] = ',';
+  }
+  memmove(str + len, item, (size_t)item_len);
+  str[len + item_len] = NUL;
+}
+
+/// Prepend a comma-separated item to the beginning of "str" in-place.
+/// Adds a comma after the item if "str" is not empty.
+static void prepend_item(char *str, char *item, ptrdiff_t item_len)
+{
+  ptrdiff_t len = (ptrdiff_t)strlen(str);
+  int comma = (len > 0) ? 1 : 0;
+
+  memmove(str + item_len + comma, str, (size_t)len + 1);
+  memmove(str, item, (size_t)item_len);
+  if (comma) {
+    str[item_len] = ',';
+  }
+}
+
+/// For a P_COMMA option: process "key:value" items in "newval" individually.
+/// Each comma-separated item in "newval" is checked against "origval":
+///
+/// For OP_ADDING/OP_PREPENDING, each item is handled as follows:
+///   - colon item, key exists with different value: replace (remove old, add)
+///   - colon item, exact duplicate: do nothing
+///   - colon item, not found: add to end
+///   - non-colon item, exists: do nothing
+///   - non-colon item, not found: add to end
+///
+/// For OP_REMOVING, each item is handled as follows:
+///   - colon item: remove by key match
+///   - non-colon item: remove by exact match
+///
+/// The result is written to "newval".
+/// Returns true if the operation was fully handled (caller should skip the
+/// normal add/remove logic).  Returns false if newval is a single non-colon
+/// item, meaning the caller should use the existing code path.
+static bool stropt_handle_keymatch(const char *origval, char *newval, set_op_T op, uint32_t flags)
+{
+  // Check if newval contains any "key:value" item or multiple
+  // comma-separated items.  If neither, let the caller use the existing
+  // code path.
+  if (vim_strchr(newval, ':') == NULL && vim_strchr(newval, ',') == NULL) {
+    return false;
+  }
+
+  // Work on a copy of newval for iteration.
+  char *newval_copy = xstrdup(newval);
+
+  // Build the result in newval.  Start with a copy of origval, then
+  // modify it per-item.  newval buffer has room for origval + arg.
+  STRCPY(newval, origval);
+
+  // Process each item individually, modifying newval in-place.
+  char *item_start = newval_copy;
+  while (true) {
+    char *p = vim_strchr(item_start, ',');
+    ptrdiff_t item_len = p == NULL ? (ptrdiff_t)strlen(item_start) : p - item_start;
+
+    if (item_len > 0) {
+      char *colon = vim_strchr(item_start, ':');
+      if (colon != NULL && colon < item_start + item_len) {
+        ptrdiff_t keylen = (colon - item_start) + 1;
+
+        if (op == OP_ADDING || op == OP_PREPENDING) {
+          ptrdiff_t old_itemlen;
+          char *found = find_key_item(newval, item_start, keylen, &old_itemlen);
+          if (found != NULL) {
+            if (old_itemlen == item_len
+                && strncmp(found, item_start, (size_t)item_len) == 0) {
+              // Exact duplicate: keep it in place, but
+              // remove other items with the same key.
+              remove_key_item(newval, item_start, keylen, found);
+            } else {
+              // Key match with different value: remove all
+              // items with the same key, then add.
+              remove_key_item(newval, item_start, keylen, NULL);
+              if (op == OP_PREPENDING) {
+                prepend_item(newval, item_start, item_len);
+              } else {
+                append_item(newval, item_start, item_len);
+              }
+            }
+          } else {
+            // New item.
+            if (op == OP_PREPENDING) {
+              prepend_item(newval, item_start, item_len);
+            } else {
+              append_item(newval, item_start, item_len);
+            }
+          }
+        } else if (op == OP_REMOVING) {
+          remove_key_item(newval, item_start, keylen, NULL);
+        }
+      } else {
+        if (op == OP_ADDING || op == OP_PREPENDING) {
+          const char *found = find_dup_item(newval, item_start, (size_t)item_len,
+                                            kOptFlagComma);
+          if (found == NULL) {
+            // New item.
+            if (op == OP_PREPENDING) {
+              prepend_item(newval, item_start, item_len);
+            } else {
+              append_item(newval, item_start, item_len);
+            }
+          }
+          // else: exact duplicate — do nothing
+        } else if (op == OP_REMOVING) {
+          char *found = (char *)find_dup_item(newval, item_start, (size_t)item_len,
+                                              kOptFlagComma);
+          if (found != NULL) {
+            remove_comma_item(newval, found, item_len);
+          }
+        }
+      }
+    }
+
+    if (p == NULL) {
+      break;
+    }
+    item_start = p + 1;
+  }
+
+  xfree(newval_copy);
+
+  return true;
+}
+
 /// Remove flags that appear twice in the string option value 'newval'.
 static void stropt_remove_dupflags(char *newval, uint32_t flags)
 {
@@ -906,32 +1109,40 @@ static char *stropt_get_newval(int nextchar, OptIndex opt_idx, char **argp, void
     newval = stropt_expand_envvar(opt_idx, origval, newval, op);
   }
 
-  // locate newval[] in origval[] when removing it
-  // and when adding to avoid duplicates
-  int len = 0;
-  if (op == OP_REMOVING || (flags & kOptFlagNoDup)) {
-    len = (int)strlen(newval);
-    s = find_dup_item(origval, newval, (size_t)len, flags);
+  // For kOptFlagComma|kOptFlagColon options with "key:value" items: process each item
+  // individually by matching on the key part.
+  // If handled, skip the normal add/remove logic below.
+  if ((flags & kOptFlagComma) && (flags & kOptFlagColon) && op != OP_NONE
+      && stropt_handle_keymatch(origval, newval, op, flags)) {
+    // fully handled
+  } else {
+    // locate newval[] in origval[] when removing it and when
+    // adding to avoid duplicates
+    int len = 0;
+    if (op == OP_REMOVING || (flags & kOptFlagNoDup)) {
+      len = (int)strlen(newval);
+      s = find_dup_item(origval, newval, (size_t)len, flags);
 
-    // do not add if already there
-    if ((op == OP_ADDING || op == OP_PREPENDING) && s != NULL) {
-      op = OP_NONE;
-      STRCPY(newval, origval);
+      // do not add if already there
+      if ((op == OP_ADDING || op == OP_PREPENDING) && s != NULL) {
+        op = OP_NONE;
+        STRCPY(newval, origval);
+      }
+
+      // if no duplicate, move pointer to end of original value
+      if (s == NULL) {
+        s = origval + (int)strlen(origval);
+      }
     }
 
-    // if no duplicate, move pointer to end of original value
-    if (s == NULL) {
-      s = origval + (int)strlen(origval);
+    // concatenate the two strings; add a ',' if needed
+    if (op == OP_ADDING || op == OP_PREPENDING) {
+      stropt_concat_with_comma(origval, newval, op, flags);
+    } else if (op == OP_REMOVING) {
+      // Remove newval[] from origval[]. (Note: "len" has been
+      // set above and is used here).
+      stropt_remove_val(origval, newval, flags, s, len);
     }
-  }
-
-  // concatenate the two strings; add a ',' if needed
-  if (op == OP_ADDING || op == OP_PREPENDING) {
-    stropt_concat_with_comma(origval, newval, op, flags);
-  } else if (op == OP_REMOVING) {
-    // Remove newval[] from origval[]. (Note: "len" has been set above
-    // and is used here).
-    stropt_remove_val(origval, newval, flags, s, len);
   }
 
   if (flags & kOptFlagFlagList) {
@@ -1046,6 +1257,7 @@ static const char *find_tty_option_end(const char *arg)
     p++;
   }
   if (p[0] == 't' && p[1] == '_' && p[2] && p[3]) {
+    // "t_xx" ("t_Co") option.
     p += 4;
   } else if (delimit) {
     // Search for delimiting >.
@@ -1727,12 +1939,6 @@ bool parse_winhl_opt(const char *winhl, win_T *wp)
     p = wp->w_p_winhl;
   }
 
-  if (wp != NULL && wp->w_ns_hl_winhl < 0) {
-    // 'winhighlight' shouldn't be used for this window.
-    // Only check that the value is valid.
-    wp = NULL;
-  }
-
   if (!*p) {
     if (wp != NULL && wp->w_ns_hl_winhl > 0 && wp->w_ns_hl == wp->w_ns_hl_winhl) {
       wp->w_ns_hl = 0;
@@ -1751,8 +1957,10 @@ bool parse_winhl_opt(const char *winhl, win_T *wp)
       DecorProvider *dp = get_decor_provider(wp->w_ns_hl_winhl, true);
       dp->hl_valid++;
     }
-    wp->w_ns_hl = wp->w_ns_hl_winhl;
-    ns_hl = wp->w_ns_hl;
+    ns_hl = wp->w_ns_hl_winhl;
+    if (wp->w_ns_hl <= 0) {
+      wp->w_ns_hl = wp->w_ns_hl_winhl;
+    }
   }
 
   while (*p) {
@@ -1840,25 +2048,26 @@ static void apply_optionset_autocmd(OptIndex opt_idx, int opt_flags, OptVal oldv
   typval_T oldval_l_tv = optval_as_tv(oldval_l, false);
   typval_T newval_tv = optval_as_tv(newval, false);
 
-  vim_snprintf(buf_type, sizeof(buf_type), "%s", (opt_flags & OPT_LOCAL) ? "local" : "global");
-  set_vim_var_tv(VV_OPTION_NEW, &newval_tv);
   set_vim_var_tv(VV_OPTION_OLD, &oldval_tv);
-  set_vim_var_string(VV_OPTION_TYPE, buf_type, -1);
+  set_vim_var_tv(VV_OPTION_NEW, &newval_tv);
+  size_t typelen = vim_snprintf_safelen(buf_type, sizeof(buf_type), "%s",
+                                        (opt_flags & OPT_LOCAL) ? "local" : "global");
+  set_vim_var_string(VV_OPTION_TYPE, buf_type, (ptrdiff_t)typelen);
   if (opt_flags & OPT_LOCAL) {
-    set_vim_var_string(VV_OPTION_COMMAND, "setlocal", -1);
+    set_vim_var_string(VV_OPTION_COMMAND, S_LEN("setlocal"));
     set_vim_var_tv(VV_OPTION_OLDLOCAL, &oldval_tv);
   }
   if (opt_flags & OPT_GLOBAL) {
-    set_vim_var_string(VV_OPTION_COMMAND, "setglobal", -1);
+    set_vim_var_string(VV_OPTION_COMMAND, S_LEN("setglobal"));
     set_vim_var_tv(VV_OPTION_OLDGLOBAL, &oldval_tv);
   }
   if ((opt_flags & (OPT_LOCAL | OPT_GLOBAL)) == 0) {
-    set_vim_var_string(VV_OPTION_COMMAND, "set", -1);
+    set_vim_var_string(VV_OPTION_COMMAND, S_LEN("set"));
     set_vim_var_tv(VV_OPTION_OLDLOCAL, &oldval_l_tv);
     set_vim_var_tv(VV_OPTION_OLDGLOBAL, &oldval_g_tv);
   }
   if (opt_flags & OPT_MODELINE) {
-    set_vim_var_string(VV_OPTION_COMMAND, "modeline", -1);
+    set_vim_var_string(VV_OPTION_COMMAND, S_LEN("modeline"));
     set_vim_var_tv(VV_OPTION_OLDLOCAL, &oldval_tv);
   }
   apply_autocmds(EVENT_OPTIONSET, options[opt_idx].fullname, NULL, false, NULL);
@@ -2116,6 +2325,7 @@ static const char *did_set_laststatus(optset_T *args)
 
   status_redraw_curbuf();
   last_status(false);  // (re)set last window status line.
+  win_float_update_statusline();
   return NULL;
 }
 
@@ -2361,7 +2571,6 @@ static const char *did_set_previewwindow(optset_T *args)
 static const char *did_set_pumblend(optset_T *args FUNC_ATTR_UNUSED)
 {
   hl_invalidate_blends();
-  pum_grid.blending = (p_pb > 0);
   if (pum_drawn()) {
     pum_redraw();
   }
@@ -2712,11 +2921,11 @@ static void do_syntax_autocmd(buf_T *buf, bool value_changed)
   static int syn_recursive = 0;
 
   syn_recursive++;
+  buf->b_flags |= BF_SYN_SET;
   // Only pass true for "force" when the value changed or not used
   // recursively, to avoid endless recurrence.
   apply_autocmds(EVENT_SYNTAX, buf->b_p_syn, buf->b_fname,
                  value_changed || syn_recursive == 1, buf);
-  buf->b_flags |= BF_SYN_SET;
   syn_recursive--;
 }
 
@@ -3388,6 +3597,7 @@ static OptVal get_option_unset_value(OptIndex opt_idx)
     switch (opt_idx) {
     case kOptAutocomplete:
     case kOptAutoread:
+    case kOptFsync:
       return BOOLEAN_OPTVAL(kNone);
     case kOptScrolloff:
     case kOptSidescrolloff:
@@ -4085,7 +4295,7 @@ static void showoptions(bool all, int opt_flags)
       }
       int col = 0;
       for (int i = row; i < item_count; i += rows) {
-        msg_col = col;                          // make columns
+        msg_advance(col);                       // make columns
         showoneopt(items[i], opt_flags);
         col += INC;
       }
@@ -4156,7 +4366,9 @@ static void showoneopt(vimoption_T *opt, int opt_flags)
     msg_putchar('=');
     // put value string in NameBuff
     option_value2string(opt, opt_flags);
-    msg_outtrans(NameBuff, 0, false);
+    if (*NameBuff != NUL) {
+      msg_outtrans(NameBuff, 0, false);
+    }
   }
 
   silent_mode = save_silent;
@@ -4431,6 +4643,8 @@ void *get_varp_scope_from(vimoption_T *p, int opt_flags, buf_T *buf, win_T *win)
     switch (opt_idx) {
     case kOptFormatprg:
       return &(buf->b_p_fp);
+    case kOptFsync:
+      return &(buf->b_p_fs);
     case kOptFindfunc:
       return &(buf->b_p_ffu);
     case kOptErrorformat:
@@ -4465,8 +4679,6 @@ void *get_varp_scope_from(vimoption_T *p, int opt_flags, buf_T *buf, win_T *win)
       return &(buf->b_p_inc);
     case kOptCompleteopt:
       return &(buf->b_p_cot);
-    case kOptIsexpand:
-      return &(buf->b_p_ise);
     case kOptDictionary:
       return &(buf->b_p_dict);
     case kOptDiffanchors:
@@ -4556,8 +4768,6 @@ void *get_varp_from(vimoption_T *p, buf_T *buf, win_T *win)
     return *buf->b_p_inc != NUL ? &(buf->b_p_inc) : p->var;
   case kOptCompleteopt:
     return *buf->b_p_cot != NUL ? &(buf->b_p_cot) : p->var;
-  case kOptIsexpand:
-    return *buf->b_p_ise != NUL ? &(buf->b_p_ise) : p->var;
   case kOptDictionary:
     return *buf->b_p_dict != NUL ? &(buf->b_p_dict) : p->var;
   case kOptDiffanchors:
@@ -4568,6 +4778,8 @@ void *get_varp_from(vimoption_T *p, buf_T *buf, win_T *win)
     return *buf->b_p_tsrfu != NUL ? &(buf->b_p_tsrfu) : p->var;
   case kOptFormatprg:
     return *buf->b_p_fp != NUL ? &(buf->b_p_fp) : p->var;
+  case kOptFsync:
+    return buf->b_p_fs >= 0 ? &(buf->b_p_fs) : p->var;
   case kOptFindfunc:
     return *buf->b_p_ffu != NUL ? &(buf->b_p_ffu) : p->var;
   case kOptErrorformat:
@@ -5242,6 +5454,7 @@ void buf_copy_options(buf_T *buf, int flags)
       // are not copied, start using the global value
       buf->b_p_ac = -1;
       buf->b_p_ar = -1;
+      buf->b_p_fs = -1;
       buf->b_p_ul = NO_LOCAL_UNDOLEVEL;
       buf->b_p_bkc = empty_string_option;
       buf->b_bkc_flags = 0;
@@ -5265,7 +5478,6 @@ void buf_copy_options(buf_T *buf, int flags)
       buf->b_p_dict = empty_string_option;
       buf->b_p_dia = empty_string_option;
       buf->b_p_tsr = empty_string_option;
-      buf->b_p_ise = empty_string_option;
       buf->b_p_tsrfu = empty_string_option;
       buf->b_p_qe = xstrdup(p_qe);
       COPY_OPT_SCTX(buf, kBufOptQuoteescape);

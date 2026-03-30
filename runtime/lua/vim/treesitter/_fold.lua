@@ -31,7 +31,7 @@ function FoldInfo.new(bufnr)
   return setmetatable({
     levels0 = {},
     levels = {},
-    parser = ts.get_parser(bufnr, nil, { error = false }),
+    parser = ts.get_parser(bufnr, nil),
   }, FoldInfo)
 end
 
@@ -381,6 +381,8 @@ local function on_bytes(bufnr, start_row, start_col, old_row, old_col, new_row, 
   end
 end
 
+local registered_cbs = {} ---@type table<integer, boolean>
+
 ---@param lnum integer|nil
 ---@return string
 function M.foldexpr(lnum)
@@ -404,19 +406,36 @@ function M.foldexpr(lnum)
 
     compute_folds_levels(bufnr, foldinfos[bufnr])
 
-    parser:register_cbs({
-      on_changedtree = function(tree_changes)
-        on_changedtree(bufnr, tree_changes)
-      end,
+    if not registered_cbs[bufnr] then
+      parser:register_cbs({
+        on_changedtree = function(tree_changes)
+          on_changedtree(bufnr, tree_changes)
+        end,
 
-      on_bytes = function(_, _, start_row, start_col, _, old_row, old_col, _, new_row, new_col, _)
-        on_bytes(bufnr, start_row, start_col, old_row, old_col, new_row, new_col)
-      end,
+        on_bytes = function(
+          _,
+          _,
+          start_row,
+          start_col,
+          _,
+          old_row,
+          old_col,
+          _,
+          new_row,
+          new_col,
+          _
+        )
+          on_bytes(bufnr, start_row, start_col, old_row, old_col, new_row, new_col)
+        end,
 
-      on_detach = function()
-        foldinfos[bufnr] = nil
-      end,
-    })
+        on_detach = function()
+          foldinfos[bufnr] = nil
+          registered_cbs[bufnr] = nil
+        end,
+      })
+
+      registered_cbs[bufnr] = true
+    end
   end
 
   return foldinfos[bufnr].levels[lnum] or '0'
@@ -431,10 +450,16 @@ api.nvim_create_autocmd('OptionSet', {
       or foldinfos[buf] and { buf }
       or {}
     for _, bufnr in ipairs(bufs) do
-      foldinfos[bufnr] = FoldInfo.new(bufnr)
+      local foldinfo = FoldInfo.new(bufnr)
+      foldinfos[bufnr] = foldinfo
       api.nvim_buf_call(bufnr, function()
-        compute_folds_levels(bufnr, foldinfos[bufnr], nil, nil, function()
-          foldinfos[bufnr]:foldupdate(bufnr, 0, api.nvim_buf_line_count(bufnr))
+        compute_folds_levels(bufnr, foldinfo, nil, nil, function()
+          -- FileType/BufUnload can clear or replace the fold state while this
+          -- async parse is in flight. Ignore callbacks for stale generations.
+          if foldinfos[bufnr] ~= foldinfo then
+            return
+          end
+          foldinfo:foldupdate(bufnr, 0, api.nvim_buf_line_count(bufnr))
         end)
       end)
     end

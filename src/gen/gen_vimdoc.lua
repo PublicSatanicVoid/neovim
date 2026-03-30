@@ -54,9 +54,14 @@ local INDENTATION = 4
 --- @field helptag_fmt fun(name: string): string|string[]
 ---
 --- Per-function helptag.
---- @field fn_helptag_fmt? fun(fun: nvim.luacats.parser.fun): string
+--- @field fn_helptag_fmt? fun(fun: nvim.gen_vimdoc.HelptagTarget): string
 ---
 --- @field append_only? string[]
+
+---@alias nvim.gen_vimdoc.HelptagTarget
+---| nvim.luacats.parser.fun
+---| nvim.luacats.parser.field
+---| nvim.luacats.parser.param
 
 local function contains(t, xs)
   return vim.tbl_contains(xs, t)
@@ -84,13 +89,13 @@ local function nvim_api_info()
         prerelease = m2 == 'true'
       end
     end
-    nvim_api_info_ = { level = level, prerelease = prerelease }
+    nvim_api_info_ = { level = assert(level), prerelease = assert(prerelease) }
   end
 
   return nvim_api_info_
 end
 
---- @param fun nvim.luacats.parser.fun
+--- @param fun nvim.gen_vimdoc.HelptagTarget
 --- @return string
 local function fn_helptag_fmt_common(fun)
   local fn_sfx = fun.table and '' or '()'
@@ -152,8 +157,8 @@ local config = {
     section_order = {
       -- Sections at the top, in a specific order:
       'builtin.lua',
-      '_options.lua',
-      '_editor.lua',
+      'options.lua',
+      'editor.lua',
       '_inspector.lua',
       'shared.lua',
 
@@ -177,18 +182,21 @@ local config = {
       'secure.lua',
       'snippet.lua',
       'spell.lua',
-      '_system.lua',
+      'system.lua',
       'text.lua',
       'ui.lua',
       'uri.lua',
       'version.lua',
 
       -- Sections at the end, in a specific order:
-      '_extui.lua',
+      'ui2.lua',
     },
     files = {
-      'runtime/lua/vim/_editor.lua',
-      'runtime/lua/vim/_extui.lua',
+      'runtime/lua/vim/_core/editor.lua',
+      'runtime/lua/vim/_core/options.lua',
+      'runtime/lua/vim/_core/shared.lua',
+      'runtime/lua/vim/_core/system.lua',
+      'runtime/lua/vim/_core/ui2.lua',
       'runtime/lua/vim/_inspector.lua',
       'runtime/lua/vim/_meta/base64.lua',
       'runtime/lua/vim/_meta/builtin.lua',
@@ -198,8 +206,6 @@ local config = {
       'runtime/lua/vim/_meta/re.lua',
       'runtime/lua/vim/_meta/regex.lua',
       'runtime/lua/vim/_meta/spell.lua',
-      'runtime/lua/vim/_options.lua',
-      'runtime/lua/vim/_system.lua',
       'runtime/lua/vim/filetype.lua',
       'runtime/lua/vim/fs.lua',
       'runtime/lua/vim/glob.lua',
@@ -211,7 +217,6 @@ local config = {
       'runtime/lua/vim/pos.lua',
       'runtime/lua/vim/range.lua',
       'runtime/lua/vim/secure.lua',
-      'runtime/lua/vim/shared.lua',
       'runtime/lua/vim/snippet.lua',
       'runtime/lua/vim/text.lua',
       'runtime/lua/vim/ui.lua',
@@ -219,7 +224,7 @@ local config = {
       'runtime/lua/vim/version.lua',
     },
     fn_xform = function(fun)
-      if contains(fun.module, { 'vim.uri', 'vim.shared', 'vim._editor' }) then
+      if contains(fun.module, { 'vim.uri', 'vim._core.shared', 'vim._core.editor' }) then
         fun.module = 'vim'
       end
 
@@ -235,27 +240,32 @@ local config = {
     end,
     section_name = {
       ['_inspector.lua'] = 'inspector',
+      ['ui2.lua'] = 'ui2',
     },
     section_fmt = function(name)
       name = name:lower()
-      if name == '_editor' then
+      if name == 'editor' then
         return 'Lua module: vim'
-      elseif name == '_system' then
+      elseif name == 'system' then
         return 'Lua module: vim.system'
-      elseif name == '_options' then
+      elseif name == 'options' then
         return 'LUA-VIMSCRIPT BRIDGE'
       elseif name == 'builtin' then
         return 'VIM'
+      elseif name == 'ui2' then
+        return 'UI2'
       end
       return 'Lua module: vim.' .. name
     end,
     helptag_fmt = function(name)
-      if name == '_editor' then
+      if name == 'Editor' then
         return 'lua-vim'
-      elseif name == '_system' then
+      elseif name == 'System' then
         return 'lua-vim-system'
-      elseif name == '_options' then
+      elseif name == 'Options' then
         return 'lua-vimscript'
+      elseif name == 'ui2' then
+        return 'ui2'
       end
       return 'vim.' .. name:lower()
     end,
@@ -415,12 +425,14 @@ local config = {
     section_order = {
       'difftool.lua',
       'editorconfig.lua',
+      'spellfile.lua',
       'tohtml.lua',
       'undotree.lua',
     },
     files = {
       'runtime/lua/editorconfig.lua',
-      'runtime/lua/tohtml.lua',
+      'runtime/lua/nvim/spellfile.lua',
+      'runtime/pack/dist/opt/nvim.tohtml/lua/tohtml.lua',
       'runtime/pack/dist/opt/nvim.undotree/lua/undotree.lua',
       'runtime/pack/dist/opt/nvim.difftool/lua/difftool.lua',
     },
@@ -430,12 +442,19 @@ local config = {
         fun.table = true
         fun.name = vim.split(fun.name, '.', { plain = true })[2] or fun.name
       end
+      if vim.startswith(fun.module, 'nvim.') then
+        fun.module = fun.module:sub(#'nvim.' + 1)
+      end
     end,
     section_fmt = function(name)
       return 'Builtin plugin: ' .. name:lower()
     end,
     helptag_fmt = function(name)
-      return name:lower()
+      name = name:lower()
+      if vim.tbl_contains({ 'spellfile', 'tohtml', 'undotree' }, name) then
+        name = ('package-%s'):format(name)
+      end
+      return name
     end,
   },
 }
@@ -491,6 +510,9 @@ local function should_render_field_or_param(p)
     and not vim.startswith(p.name, '_')
 end
 
+--- Gets a field's description and its "(default: …)" value, if any (see `lsp/client.lua` for
+--- examples).
+---
 --- @param desc? string
 --- @return string?, string?
 local function get_default(desc)
@@ -769,24 +791,34 @@ local function render_fun(fun, classes, cfg)
     return
   end
 
+  if not fun.name then
+    error(('fun.name is nil, check fn_xform(). fun: %s'):format(vim.inspect(fun)))
+  end
+
   if vim.startswith(fun.name, '_') or fun.name:find('[:.]_') then
     return
   end
 
+  local internal = vim.startswith(fun.name, 'nvim__')
   local ret = {} --- @type string[]
 
   table.insert(ret, render_fun_header(fun, cfg))
   table.insert(ret, '\n')
 
-  if fun.since then
-    local since = assert(tonumber(fun.since), 'invalid @since on ' .. fun.name)
-    local info = nvim_api_info()
-    if since == 0 or (info.prerelease and since == info.level) then
+  if internal or fun.since then
+    local since = assert(tonumber(fun.since or (internal and 0)), 'invalid @since on ' .. fun.name)
+    local nvim_api = false and nvim_api_info()
+    _ = nvim_api -- Disable prerelease "WARNING" doc, in preparation for for upcoming release.
+
+    if
+      internal or since == 0 --[[or (nvim_api.prerelease and since == nvim_api.level)]]
+    then
       -- Experimental = (since==0 or current prerelease)
       local s = 'WARNING: This feature is experimental/unstable.'
       table.insert(ret, md_to_vimdoc(s, INDENTATION, INDENTATION, TEXT_WIDTH))
       table.insert(ret, '\n')
-    else
+    end
+    if since > 0 then
       local v = assert(util.version_level[since], 'invalid @since on ' .. fun.name)
       fun.attrs = fun.attrs or {}
       table.insert(fun.attrs, fmt('Since: %s', v))
@@ -884,7 +916,7 @@ end
 
 --- @return string
 local function get_script_path()
-  local str = debug.getinfo(2, 'S').source:sub(2)
+  local str = debug.getinfo(2, 'S').source:gsub('^@', '')
   return str:match('(.*[/\\])') or './'
 end
 
@@ -967,6 +999,10 @@ end
 --- @param add_header? boolean
 local function render_section(section, add_header)
   local doc = {} --- @type string[]
+
+  if not section.title then
+    error(('section.title is nil, check section_fmt(). section: %s'):format(vim.inspect(section)))
+  end
 
   if add_header ~= false then
     vim.list_extend(doc, {

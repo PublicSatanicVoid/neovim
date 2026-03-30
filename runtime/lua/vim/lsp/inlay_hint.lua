@@ -39,7 +39,7 @@ local augroup = api.nvim_create_augroup('nvim.lsp.inlayhint', {})
 ---@private
 function M.on_inlayhint(err, result, ctx)
   if err then
-    log.error('inlayhint', err)
+    log.error('inlay_hint', err)
     return
   end
   local bufnr = assert(ctx.bufnr)
@@ -117,7 +117,7 @@ function M.on_refresh(err, _, ctx)
   if err then
     return vim.NIL
   end
-  for _, bufnr in ipairs(vim.lsp.get_buffers_by_client_id(ctx.client_id)) do
+  for bufnr in pairs(vim.lsp.get_client_by_id(ctx.client_id).attached_buffers or {}) do
     for _, winid in ipairs(api.nvim_list_wins()) do
       if api.nvim_win_get_buf(winid) == bufnr then
         if bufstates[bufnr] and bufstates[bufnr].enabled then
@@ -264,26 +264,23 @@ local function _enable(bufnr)
 end
 
 api.nvim_create_autocmd('LspNotify', {
-  callback = function(args)
+  callback = function(ev)
     ---@type integer
-    local bufnr = args.buf
+    local bufnr = ev.buf
 
-    if
-      args.data.method ~= 'textDocument/didChange'
-      and args.data.method ~= 'textDocument/didOpen'
-    then
+    if ev.data.method ~= 'textDocument/didChange' and ev.data.method ~= 'textDocument/didOpen' then
       return
     end
     if bufstates[bufnr].enabled then
-      refresh(bufnr, args.data.client_id)
+      refresh(bufnr, ev.data.client_id)
     end
   end,
   group = augroup,
 })
 api.nvim_create_autocmd('LspAttach', {
-  callback = function(args)
+  callback = function(ev)
     ---@type integer
-    local bufnr = args.buf
+    local bufnr = ev.buf
 
     api.nvim_buf_attach(bufnr, false, {
       on_reload = function(_, cb_bufnr)
@@ -302,13 +299,13 @@ api.nvim_create_autocmd('LspAttach', {
   group = augroup,
 })
 api.nvim_create_autocmd('LspDetach', {
-  callback = function(args)
+  callback = function(ev)
     ---@type integer
-    local bufnr = args.buf
+    local bufnr = ev.buf
     local clients = vim.lsp.get_clients({ bufnr = bufnr, method = 'textDocument/inlayHint' })
 
     if not vim.iter(clients):any(function(c)
-      return c.id ~= args.data.client_id
+      return c.id ~= ev.data.client_id
     end) then
       _disable(bufnr)
     end

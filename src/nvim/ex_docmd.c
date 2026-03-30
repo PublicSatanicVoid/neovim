@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -40,8 +41,11 @@
 #include "nvim/eval/typval_defs.h"
 #include "nvim/eval/userfunc.h"
 #include "nvim/eval/vars.h"
+#include "nvim/eval_defs.h"
 #include "nvim/event/loop.h"
 #include "nvim/event/multiqueue.h"
+#include "nvim/event/proc.h"
+#include "nvim/event/socket.h"
 #include "nvim/ex_cmds.h"
 #include "nvim/ex_cmds2.h"
 #include "nvim/ex_cmds_defs.h"
@@ -73,6 +77,8 @@
 #include "nvim/message.h"
 #include "nvim/mouse.h"
 #include "nvim/move.h"
+#include "nvim/msgpack_rpc/channel.h"
+#include "nvim/msgpack_rpc/server.h"
 #include "nvim/normal.h"
 #include "nvim/normal_defs.h"
 #include "nvim/option.h"
@@ -964,6 +970,7 @@ void handle_did_throw(void)
   assert(current_exception != NULL);
   char *p = NULL;
   msglist_T *messages = NULL;
+  ESTACK_CHECK_DECLARATION;
 
   // If the uncaught exception is a user exception, report it as an
   // error.  If it is an error exception, display the saved error
@@ -985,6 +992,7 @@ void handle_did_throw(void)
   }
 
   estack_push(ETYPE_EXCEPT, current_exception->throw_name, current_exception->throw_lnum);
+  ESTACK_CHECK_SETUP;
   current_exception->throw_name = NULL;
 
   discard_current_exception();              // uses IObuff if 'verbose'
@@ -1009,6 +1017,7 @@ void handle_did_throw(void)
     xfree(p);
   }
   xfree(SOURCING_NAME);
+  ESTACK_CHECK_NOW;
   estack_pop();
 }
 
@@ -1488,9 +1497,6 @@ static char *find_excmd_after_range(exarg_T *eap)
   // Save location after command modifiers.
   char *cmd = eap->cmd;
   eap->cmd = skip_range(eap->cmd, NULL);
-  if (*eap->cmd == '*') {
-    eap->cmd = skipwhite(eap->cmd + 1);
-  }
   char *p = find_ex_command(eap, NULL);
   eap->cmd = cmd;  // Restore original position for address parsing
   return p;
@@ -1553,11 +1559,13 @@ bool parse_cmdline(char **cmdline, exarg_T *eap, CmdParseInfo *cmdinfo, const ch
     .cookie = NULL,
   };
 
-  // Parse command modifiers
-  if (parse_command_modifiers(eap, errormsg, &cmdinfo->cmdmod, false) == FAIL) {
+  char *orig_cmd = eap->cmd;
+  // If parse command modifiers failed but modifiers were passed, continue
+  int result = parse_command_modifiers(eap, errormsg, &cmdinfo->cmdmod, false);
+  after_modifier = eap->cmd;
+  if (result == FAIL && after_modifier == orig_cmd) {
     goto end;
   }
-  after_modifier = eap->cmd;
 
   // We need the command name to know what kind of range it uses.
   char *p = find_excmd_after_range(eap);
@@ -1574,10 +1582,28 @@ bool parse_cmdline(char **cmdline, exarg_T *eap, CmdParseInfo *cmdinfo, const ch
 
   // Skip colon and whitespace
   eap->cmd = skip_colon_white(eap->cmd, true);
-  // Fail if command is a comment or if command doesn't exist
-  if (*eap->cmd == NUL || *eap->cmd == '"') {
+  // Fail if command is a comment
+  if (*eap->cmd == '"') {
     goto end;
   }
+  // Fail only if: empty command AND no range AND no modifier
+  if (*eap->cmd == NUL && eap->addr_count == 0 && after_modifier == *cmdline) {
+    goto end;
+  }
+
+  // Allow range-only (:1) or modifier-only (:aboveleft) commands.
+  if (*eap->cmd == NUL && eap->cmdidx == CMD_SIZE) {
+    eap->arg = eap->cmd;
+    if (eap->addr_count > 0) {
+      eap->argt = EX_RANGE;
+    } else {
+      eap->argt = 0;
+      eap->addr_type = ADDR_NONE;
+    }
+    retval = true;
+    goto end;
+  }
+
   // Fail if command is invalid
   if (eap->cmdidx == CMD_SIZE) {
     xstrlcpy(IObuff, _(e_not_an_editor_command), IOSIZE);
@@ -1823,6 +1849,10 @@ int execute_cmd(exarg_T *eap, CmdParseInfo *cmdinfo, bool preview)
   }
 
   correct_range(eap);
+  if (eap->cmdidx == CMD_SIZE && eap->addr_count > 0) {
+    errormsg = ex_range_without_command(eap);
+    goto end;
+  }
 
   if (((eap->argt & EX_WHOLEFOLD) || eap->addr_count >= 2) && !global_busy
       && eap->addr_type == ADDR_LINES) {
@@ -2341,12 +2371,7 @@ static char *do_one_cmd(char **cmdlinep, int flags, cstack_T *cstack, LineGetter
     // Also do this for ":read !cmd", ":write !cmd" and ":global".
     // Any others?
     for (char *s = ea.arg; *s; s++) {
-      // Remove one backslash before a newline, so that it's possible to
-      // pass a newline to the shell and also a newline that is preceded
-      // with a backslash.  This makes it impossible to end a shell
-      // command in a backslash, but that doesn't appear useful.
-      // Halving the number of backslashes is incompatible with previous
-      // versions.
+      // Remove one backslash before a newline.
       if (*s == '\\' && s[1] == '\n') {
         STRMOVE(s, s + 1);
       } else if (*s == '\n') {
@@ -2511,7 +2536,25 @@ static char *ex_range_without_command(exarg_T *eap)
 /// @return  FAIL when the command is not to be executed.
 int parse_command_modifiers(exarg_T *eap, const char **errormsg, cmdmod_T *cmod, bool skip_only)
 {
+  char *orig_cmd = eap->cmd;
+  char *cmd_start = NULL;
+  bool use_plus_cmd = false;
+  bool has_visual_range = false;
   CLEAR_POINTER(cmod);
+
+  if (strncmp(eap->cmd, "'<,'>", 5) == 0) {
+    // The automatically inserted Visual area range is skipped, so that
+    // typing ":cmdmod cmd" in Visual mode works without having to move the
+    // range to after the modifiers. The command will be "'<,'>cmdmod cmd",
+    // parse "cmdmod cmd" and then put back "'<,'>" before "cmd" below.
+    // Only skip '<,'>' if there's a command after it
+    const char *p = skipwhite(eap->cmd + 5);
+    if (*p != NUL && *p != '|') {
+      eap->cmd += 5;
+      cmd_start = eap->cmd;
+      has_visual_range = true;
+    }
+  }
 
   // Repeat until no more command modifiers are found.
   while (true) {
@@ -2521,14 +2564,16 @@ int parse_command_modifiers(exarg_T *eap, const char **errormsg, cmdmod_T *cmod,
       eap->cmd++;
     }
 
-    // in ex mode, an empty line works like :+
+    // in ex mode, an empty command (after modifiers) works like :+
     if (*eap->cmd == NUL && exmode_active
         && getline_equal(eap->ea_getline, eap->cookie, getexline)
         && curwin->w_cursor.lnum < curbuf->b_ml.ml_line_count) {
       eap->cmd = exmode_plus;
+      use_plus_cmd = true;
       if (!skip_only) {
         ex_pressedreturn = true;
       }
+      break;  // no modifiers following
     }
 
     // ignore comment and empty lines
@@ -2748,6 +2793,39 @@ int parse_command_modifiers(exarg_T *eap, const char **errormsg, cmdmod_T *cmod,
       continue;
     }
     break;
+  }
+
+  if (has_visual_range) {
+    if (eap->cmd > cmd_start) {
+      // Move the '<,'> range to after the modifiers and insert a colon.
+      // Since the modifiers have been parsed put the colon on top of the
+      // space: "'<,'>mod cmd" -> "mod:'<,'>cmd
+      // Put eap->cmd after the colon.
+      if (use_plus_cmd) {
+        size_t len = strlen(cmd_start);
+
+        // Special case: empty command uses "+":
+        //  "'<,'>mods" -> "mods *+
+        //  Use "*" instead of "'<,'>" to avoid the command getting
+        //  longer, in case is was allocated.
+        memmove(orig_cmd, cmd_start, len);
+        xmemcpyz(orig_cmd + len, S_LEN(" *+"));
+      } else {
+        memmove(cmd_start - 5, cmd_start, (size_t)(eap->cmd - cmd_start));
+        eap->cmd -= 5;
+        memmove(eap->cmd - 1, ":'<,'>", 6);
+      }
+    } else {
+      // No modifiers, move the pointer back.
+      // Special case: change empty command to "+".
+      if (use_plus_cmd) {
+        eap->cmd = "'<,'>+";
+      } else {
+        eap->cmd = orig_cmd;
+      }
+    }
+  } else if (use_plus_cmd) {
+    eap->cmd = exmode_plus;
   }
 
   return OK;
@@ -3372,6 +3450,11 @@ char *skip_range(const char *cmd, int *ctx)
 
   // Skip ":" and white space.
   cmd = skip_colon_white(cmd, false);
+
+  // Skip "*" used for Visual range.
+  if (*cmd == '*') {
+    cmd = skipwhite(cmd + 1);
+  }
 
   return (char *)cmd;
 }
@@ -4676,8 +4759,8 @@ static int check_more(bool message, bool forceit)
         }
         return FAIL;
       }
-      semsg(NGETTEXT("E173: %" PRId64 " more file to edit",
-                     "E173: %" PRId64 " more files to edit", n), (int64_t)n);
+      semsg(NGETTEXT("E173: %d more file to edit",
+                     "E173: %d more files to edit", n), n);
       quitmore = 2;                 // next try to quit is allowed
     }
     return FAIL;
@@ -4704,6 +4787,7 @@ static void ex_colorscheme(exarg_T *eap)
     emsg_off--;
     xfree(expr);
 
+    msg_ext_set_kind("list_cmd");
     if (p != NULL) {
       msg(p, 0);
       xfree(p);
@@ -4725,16 +4809,9 @@ static void ex_highlight(exarg_T *eap)
 
 /// Call this function if we thought we were going to exit, but we won't
 /// (because of an error).  May need to restore the terminal mode.
-void not_exiting(void)
+void not_exiting(bool save_exiting)
 {
-  exiting = false;
-}
-
-/// Call this function if we thought we were going to restart, but we won't
-/// (because of an error).
-void not_restarting(void)
-{
-  restarting = false;
+  exiting = save_exiting;
 }
 
 bool before_quit_autocmds(win_T *wp, bool quit_all, bool forceit)
@@ -4804,6 +4881,7 @@ static void ex_quit(exarg_T *eap)
     return;
   }
 
+  bool save_exiting = exiting;
   // If there is only one relevant window we will exit.
   if (check_more(false, eap->forceit) == OK && only_one_window()) {
     exiting = true;
@@ -4814,7 +4892,7 @@ static void ex_quit(exarg_T *eap)
                         | CCGD_EXCMD))
       || check_more(true, eap->forceit) == FAIL
       || (only_one_window() && check_changed_any(eap->forceit, true))) {
-    not_exiting();
+    not_exiting(save_exiting);
   } else {
     // quit last window
     // Note: only_one_window() returns true, even so a help window is
@@ -4825,7 +4903,7 @@ static void ex_quit(exarg_T *eap)
     if (only_one_window() && (ONE_WINDOW || eap->addr_count == 0)) {
       getout(0);
     }
-    not_exiting();
+    not_exiting(save_exiting);
     // close window; may free buffer
     win_close(wp, !buf_hide(wp->w_buffer) || eap->forceit, eap->forceit);
   }
@@ -4871,56 +4949,177 @@ static void ex_quitall(exarg_T *eap)
   if (before_quit_all(eap) == FAIL) {
     return;
   }
+  bool save_exiting = exiting;
   exiting = true;
-  if (!eap->forceit && check_changed_any(false, false)) {
-    not_exiting();
-    return;
+  if (eap->forceit || !check_changed_any(false, false)) {
+    getout(0);
   }
-  getout(0);
+  not_exiting(save_exiting);
 }
 
 /// ":restart": restart the Nvim server (using ":qall!").
 /// ":restart +cmd": restart the Nvim server using ":cmd".
-/// ":restart +cmd <command>": restart the Nvim server using ":cmd" and add -c <command> to the new server.
+/// ":restart +cmd <command>": restart the Nvim server using ":cmd" and runs <command> in the new server.
 static void ex_restart(exarg_T *eap)
 {
-  // Patch v:argv to include "-c <arg>" when it restarts.
-  if (eap->arg != NULL) {
-    const list_T *l = get_vim_var_list(VV_ARGV);
-    int argc = tv_list_len(l);
-    list_T *argv_cpy = tv_list_alloc(argc + 2);
-    bool added_startup_arg = false;
-    TV_LIST_ITER_CONST(l, li, {
-      const char *arg = tv_get_string(TV_LIST_ITEM_TV(li));
-      size_t arg_size = strlen(arg);
-      assert(arg_size <= (size_t)SSIZE_MAX);
-      tv_list_append_string(argv_cpy, arg, (ssize_t)arg_size);
-      if (!added_startup_arg) {
-        tv_list_append_string(argv_cpy, "-c", 2);
-        size_t cmd_size = strlen(eap->arg);
-        assert(cmd_size <= (size_t)SSIZE_MAX);
-        tv_list_append_string(argv_cpy, eap->arg, (ssize_t)cmd_size);
-        added_startup_arg = true;
-      }
-    });
-    set_vim_var_list(VV_ARGV, argv_cpy);
-  }
-  char *quit_cmd = (eap->do_ecmd_cmd) ? eap->do_ecmd_cmd : "qall!";
   Error err = ERROR_INIT;
-  if ((cmdmod.cmod_flags & CMOD_CONFIRM) && check_changed_any(false, false)) {
-    return;
+  const char *exepath = get_vim_var_str(VV_PROGPATH);
+  const list_T *l = get_vim_var_list(VV_ARGV);
+  int argc = tv_list_len(l);
+
+  char **argv = xcalloc((size_t)argc + 3, sizeof(char *));
+  size_t i = 0;
+  const char *listen_arg = NULL;
+#ifdef MSWIN  // FIXME: --listen doesn't work on Windows and needs to be dropped
+# define HANDLE_LISTEN_ADDR li = next_li; continue
+#else
+# define HANDLE_LISTEN_ADDR listen_arg = addr
+#endif
+  TV_LIST_ITER_CONST(l, li, {
+    const char *arg = tv_get_string(TV_LIST_ITEM_TV(li));
+    // Drop "-- [files…]". Usually isn't wanted. User can :mksession instead.
+    if (i > 0 && strequal(arg, "--")) {
+      break;
+    }
+    // Drop "-s <scriptfile>": skip the scriptfile arg too.
+    if (i > 0 && strequal(arg, "-s")) {
+      li = TV_LIST_ITEM_NEXT(l, li);
+      continue;
+    }
+    // The address after --listen may be in use by the current server.
+    if (i > 0 && strequal(arg, "--listen")) {
+      listitem_T *next_li = TV_LIST_ITEM_NEXT(l, li);
+      if (next_li != NULL) {
+        const char *addr = tv_get_string(TV_LIST_ITEM_TV(next_li));
+        if (strstr(addr, ":") || strstr(addr, "/") || strstr(addr, "\\")) {
+          HANDLE_LISTEN_ADDR;
+        }
+      }
+    }
+    // Replace `--embed` OR `--headless` with `--embed --headless` once.
+    // Drop stdin ("-") argument.
+    if (i == 0
+        || (!strequal(arg, "--embed") && !strequal(arg, "--headless") && !strequal(arg, "-"))) {
+      argv[i++] = xstrdup(arg);
+      if (i == 1) {
+        argv[i++] = xstrdup("--embed");
+        argv[i++] = xstrdup("--headless");
+      }
+    }
+  });
+#undef HANDLE_LISTEN_ADDR
+
+  bool server_stopped = false;
+  if (listen_arg != NULL) {
+    // Stop listening on the --listen address so that the new server can listen.
+    server_stopped = server_stop(listen_arg, true);
   }
-  restarting = true;
+
+  CallbackReader on_err = CALLBACK_READER_INIT;
+  // This temporary bootstrap channel is closed intentionally once we obtain
+  // the new server address. Don't forward child stderr to the current UI.
+  on_err.fwd_err = false;
+  bool detach = true;
+  varnumber_T exit_status;
+
+  Channel *channel = channel_job_start(argv, exepath,
+                                       CALLBACK_READER_INIT, on_err, CALLBACK_NONE,
+                                       false, true, true, detach, kChannelStdinPipe,
+                                       NULL, 0, 0, NULL, &exit_status);
+  if (!channel) {
+    emsg("cannot create a channel job");
+    goto fail_1;
+  }
+
+  // Prevent new server from self-exiting when the channel closes.
+  ArenaMem result_mem = NULL;
+  MAXSIZE_TEMP_ARRAY(detach_args, 1);
+  ADD_C(detach_args, BOOLEAN_OBJ(true));
+  rpc_send_call(channel->id, "nvim__chan_set_detach", detach_args, &result_mem, &err);
+  if (ERROR_SET(&err)) {
+    goto fail_2;
+  }
+  arena_mem_free(result_mem);
+  result_mem = NULL;
+
+  if (*eap->arg != NUL) {
+    // Execute [command] on new server on UIEnter.
+    MAXSIZE_TEMP_DICT(autocmd_opts, 3);
+    PUT_C(autocmd_opts, "once", BOOLEAN_OBJ(true));
+    PUT_C(autocmd_opts, "nested", BOOLEAN_OBJ(true));
+    PUT_C(autocmd_opts, "command", CSTR_AS_OBJ(eap->arg));
+    MAXSIZE_TEMP_ARRAY(autocmd_args, 2);
+    ADD_C(autocmd_args, CSTR_AS_OBJ("UIEnter"));
+    ADD_C(autocmd_args, DICT_OBJ(autocmd_opts));
+    rpc_send_call(channel->id, "nvim_create_autocmd", autocmd_args, &result_mem, &err);
+    if (ERROR_SET(&err)) {
+      goto fail_2;
+    }
+    arena_mem_free(result_mem);
+    result_mem = NULL;
+  }
+
+  // Get new server's listen address.
+  MAXSIZE_TEMP_ARRAY(servername_args, 1);
+  ADD_C(servername_args, CSTR_AS_OBJ("servername"));
+  Object result = rpc_send_call(channel->id, "nvim_get_vvar", servername_args, &result_mem, &err);
+  if (ERROR_SET(&err)) {
+    goto fail_2;
+  }
+  if (result.type != kObjectTypeString || result.data.string.size == 0) {
+    emsg("restart failed: could not get listen address from new server");
+    goto fail_2;
+  }
+  char *listen_addr = xmemdupz(result.data.string.data, result.data.string.size);
+  arena_mem_free(result_mem);
+  result_mem = NULL;
+
+  // Send restart event with new listen address to current UI.
+  if (!remote_ui_restart(current_ui, listen_addr, &err)) {
+    if (ERROR_SET(&err)) {
+      ELOG("%s", err.msg);  // UI disappeared already?
+      api_clear_error(&err);
+    }
+    xfree(listen_addr);
+    goto fail_2;
+  }
+  xfree(listen_addr);
+
+  char *quit_cmd = (eap->do_ecmd_cmd) ? eap->do_ecmd_cmd : "qall";
+  char *quit_cmd_copy = NULL;
+
+  // Prepend "confirm " to cmd if :confirm is used
+  if (cmdmod.cmod_flags & CMOD_CONFIRM) {
+    quit_cmd_copy = concat_str("confirm ", quit_cmd);
+    quit_cmd = quit_cmd_copy;
+  }
   nvim_command(cstr_as_string(quit_cmd), &err);
+  xfree(quit_cmd_copy);
+
   if (ERROR_SET(&err)) {
     emsg(err.msg);  // Could not exit
     api_clear_error(&err);
-    not_restarting();
-    return;
-  }
-  if (!exiting) {
+  } else if (!exiting) {
     emsg("restart failed: +cmd did not quit the server");
-    not_restarting();
+  }
+
+fail_2:
+  if (ERROR_SET(&err)) {
+    emsg(err.msg);
+    api_clear_error(&err);
+  }
+  arena_mem_free(result_mem);
+
+  // Kill the new nvim server.
+  proc_stop(&channel->stream.proc);
+  if (proc_wait(&channel->stream.proc, -1, NULL) < 0) {
+    emsg("killing new nvim server failed");
+  }
+
+fail_1:
+  // Restart listening on the --listen address.
+  if (server_stopped && server_start(listen_arg) != 0) {
+    semsg("couldn't resume listening on %s", listen_arg);
   }
 }
 
@@ -4972,6 +5171,9 @@ void ex_win_close(int forceit, win_T *win, tabpage_T *tp)
     emsg(_(e_autocmd_close));
     return;
   }
+  if (!win->w_floating && window_layout_locked(CMD_close)) {
+    return;
+  }
 
   buf_T *buf = win->w_buffer;
 
@@ -5013,6 +5215,10 @@ static void ex_tabclose(exarg_T *eap)
     return;
   }
 
+  if (window_layout_locked(CMD_tabclose)) {
+    return;
+  }
+
   int tab_number = get_tabpage_arg(eap);
   if (eap->errmsg != NULL) {
     return;
@@ -5041,6 +5247,10 @@ static void ex_tabonly(exarg_T *eap)
 
   if (first_tabpage->tp_next == NULL) {
     msg(_("Already only one tab page"), 0);
+    return;
+  }
+
+  if (window_layout_locked(CMD_tabonly)) {
     return;
   }
 
@@ -5074,6 +5284,14 @@ static void ex_tabonly(exarg_T *eap)
 /// Close the current tab page.
 void tabpage_close(int forceit)
 {
+  if (window_layout_locked(CMD_tabclose)) {
+    return;
+  }
+
+  trigger_tabclosedpre(curtab);
+  curtab->tp_did_tabclosedpre = true;
+  tabpage_T *const save_curtab = curtab;
+
   // First close all the windows but the current one.  If that worked then
   // close the last window in this tab, that will close it.
   while (curwin->w_floating) {
@@ -5084,6 +5302,11 @@ void tabpage_close(int forceit)
   }
   if (ONE_WINDOW) {
     ex_win_close(forceit, curwin, NULL);
+  }
+  if (curtab == save_curtab) {
+    // When closing the tab page failed, reset tp_did_tabclosedpre so that
+    // TabClosedPre behaves consistently on next :close vs :tabclose.
+    curtab->tp_did_tabclosedpre = false;
   }
 }
 
@@ -5096,6 +5319,13 @@ void tabpage_close_other(tabpage_T *tp, int forceit)
   int done = 0;
   char prev_idx[NUMBUFLEN];
 
+  if (window_layout_locked(CMD_SIZE)) {
+    return;
+  }
+
+  trigger_tabclosedpre(tp);
+  tp->tp_did_tabclosedpre = true;
+
   // Limit to 1000 windows, autocommands may add a window while we close
   // one.  OK, so I'm paranoid...
   while (++done < 1000) {
@@ -5103,20 +5333,33 @@ void tabpage_close_other(tabpage_T *tp, int forceit)
     win_T *wp = tp->tp_lastwin;
     ex_win_close(forceit, wp, tp);
 
-    // Autocommands may delete the tab page under our fingers and we may
-    // fail to close a window with a modified buffer.
-    if (!valid_tabpage(tp) || tp->tp_lastwin == wp) {
+    // Autocommands may delete the tab page under our fingers.
+    if (!valid_tabpage(tp)) {
       break;
     }
+    // We may fail to close a window with a modified buffer.
+    if (tp->tp_lastwin == wp) {
+      done = 1000;
+      break;
+    }
+  }
+  if (done >= 1000) {
+    // When closing the tab page failed, reset tp_did_tabclosedpre so that
+    // TabClosedPre behaves consistently on next :close vs :tabclose.
+    tp->tp_did_tabclosedpre = false;
+    return;
   }
 }
 
 /// ":only".
 static void ex_only(exarg_T *eap)
 {
-  win_T *wp;
+  if (window_layout_locked(CMD_only)) {
+    return;
+  }
 
   if (eap->addr_count > 0) {
+    win_T *wp;
     linenr_T wnr = eap->line2;
     for (wp = firstwin; --wnr > 0;) {
       if (wp->w_next == NULL) {
@@ -5124,11 +5367,9 @@ static void ex_only(exarg_T *eap)
       }
       wp = wp->w_next;
     }
-  } else {
-    wp = curwin;
-  }
-  if (wp != curwin) {
-    win_goto(wp);
+    if (wp != curwin) {
+      win_goto(wp);
+    }
   }
   close_others(true, eap->forceit);
 }
@@ -5140,11 +5381,11 @@ static void ex_hide(exarg_T *eap)
     return;
   }
 
+  win_T *win = NULL;
   if (eap->addr_count == 0) {
-    win_close(curwin, false, eap->forceit);  // don't free buffer
+    win = curwin;
   } else {
     int winnr = 0;
-    win_T *win = NULL;
 
     FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
       winnr++;
@@ -5156,8 +5397,13 @@ static void ex_hide(exarg_T *eap)
     if (win == NULL) {
       win = lastwin;
     }
-    win_close(win, false, eap->forceit);
   }
+
+  if (!win->w_floating && window_layout_locked(CMD_hide)) {
+    return;
+  }
+
+  win_close(win, false, eap->forceit);  // don't free buffer
 }
 
 /// ":stop" and ":suspend": Suspend Vim.
@@ -5184,6 +5430,7 @@ static void ex_exit(exarg_T *eap)
     return;
   }
 
+  bool save_exiting = exiting;
   // we plan to exit if there is only one relevant window
   if (check_more(false, eap->forceit) == OK && only_one_window()) {
     exiting = true;
@@ -5195,13 +5442,13 @@ static void ex_exit(exarg_T *eap)
       || before_quit_autocmds(curwin, false, eap->forceit)
       || check_more(true, eap->forceit) == FAIL
       || (only_one_window() && check_changed_any(eap->forceit, false))) {
-    not_exiting();
+    not_exiting(save_exiting);
   } else {
     if (only_one_window()) {
       // quit last window, exit Vim
       getout(0);
     }
-    not_exiting();
+    not_exiting(save_exiting);
     // Quit current window, may free the buffer.
     win_close(curwin, !buf_hide(curwin->w_buffer), eap->forceit);
   }
@@ -5332,6 +5579,7 @@ int expand_findfunc(char *pat, char ***files, int *numMatches)
 
   int len = tv_list_len(l);
   if (len == 0) {  // empty List
+    tv_list_free(l);
     return FAIL;
   }
 
@@ -5486,7 +5734,7 @@ void ex_splitview(exarg_T *eap)
   // Either open new tab page or split the window.
   if (use_tab) {
     if (win_new_tabpage(cmdmod.cmod_tab != 0 ? cmdmod.cmod_tab : eap->addr_count == 0
-                        ? 0 : (int)eap->line2 + 1, eap->arg) != FAIL) {
+                        ? 0 : (int)eap->line2 + 1, eap->arg, true, NULL)) {
       do_exedit(eap, old_curwin);
       apply_autocmds(EVENT_TABNEWENTERED, NULL, NULL, false, curbuf);
 
@@ -5586,6 +5834,7 @@ static void ex_tabs(exarg_T *eap)
 {
   int tabcount = 1;
 
+  msg_ext_set_kind("list_cmd");
   msg_start();
   msg_scroll = true;
 
@@ -5598,7 +5847,9 @@ static void ex_tabs(exarg_T *eap)
       break;
     }
 
-    msg_putchar('\n');
+    if (msg_col > 0) {
+      msg_putchar('\n');
+    }
     vim_snprintf(IObuff, IOSIZE, _("Tab page %d"), tabcount++);
     msg_outtrans(IObuff, HLF_T, false);
     os_breakcheck();
@@ -5606,7 +5857,7 @@ static void ex_tabs(exarg_T *eap)
     FOR_ALL_WINDOWS_IN_TAB(wp, tp) {
       if (got_int) {
         break;
-      } else if (!wp->w_config.focusable) {
+      } else if (!wp->w_config.focusable || wp->w_config.hide) {
         continue;
       }
 
@@ -5814,6 +6065,9 @@ void do_exedit(exarg_T *eap, win_T *old_curwin)
                         || eap->cmdidx == CMD_view)) {
     exmode_active = false;
     ex_pressedreturn = false;
+    if (ui_has(kUICmdline)) {
+      ui_ext_cmdline_block_leave();
+    }
     if (*eap->arg == NUL) {
       // Special case:  ":global/pat/visual\NLvi-commands"
       if (global_busy) {
@@ -7419,7 +7673,7 @@ char *eval_vars(char *src, const char *srcstart, size_t *usedlen, linenr_T *lnum
                                         ? (FIND_IDENT | FIND_STRING)
                                         : (spec_idx == SPEC_CEXPR
                                            ? (FIND_IDENT | FIND_STRING | FIND_EVAL)
-                                           : FIND_STRING));
+                                           : FIND_STRING), NULL);
     if (resultlen == 0) {
       *errormsg = "";
       return NULL;
@@ -7990,6 +8244,21 @@ static void ex_terminal(exarg_T *eap)
   }
 
   do_cmdline_cmd(ex_cmd);
+}
+
+/// ":lsp {subcmd} {clients}"
+static void ex_lsp(exarg_T *eap)
+{
+  Error err = ERROR_INIT;
+  MAXSIZE_TEMP_ARRAY(args, 1);
+
+  ADD_C(args, CSTR_AS_OBJ(eap->arg));
+
+  NLUA_EXEC_STATIC("require'vim._core.ex_cmd'.ex_lsp(...)", args, kRetNilBool, NULL, &err);
+  if (ERROR_SET(&err)) {
+    emsg_multiline(err.msg, "lua_error", HLF_E, true);
+  }
+  api_clear_error(&err);
 }
 
 /// ":fclose"

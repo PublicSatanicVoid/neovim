@@ -1,7 +1,7 @@
 *various.txt*   Nvim
 
 
-		  VIM REFERENCE MANUAL    by Bram Moolenaar
+		  VIM REFERENCE MANUAL	  by Bram Moolenaar
 
 
 Various commands					*various*
@@ -101,9 +101,14 @@ g8			Print the hex values of the bytes used in the
 			command won't move the cursor.
 
 							*gx*
-gx			Opens the current filepath or URL (decided by
-			|<cfile>|, 'isfname') at cursor using the system
-			default handler. Mapped to |vim.ui.open()|.
+gx			Opens the current filepath, URL (decided by
+			|<cfile>|, 'isfname'), or |LSP| "documentLink" at
+			cursor using the system default handler.
+
+			In |help| files, gx treats help tags as
+			https://neovim.io/doc/user/ URLs.
+
+			Mapped to |vim.ui.open()|.
 
 							*v_gx*
 {Visual}gx		Opens the selected text using the system default

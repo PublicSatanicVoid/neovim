@@ -83,6 +83,27 @@ describe('vim.lsp.inline_completion', function()
         },
         handlers = {
           ['textDocument/inlineCompletion'] = function(_, _, callback)
+            if _G.empty then
+              callback(nil, {
+                items = {
+                  {
+                    insertText = 'foobar',
+                    range = {
+                      start = {
+                        line = 0,
+                        character = 19,
+                      },
+                      ['end'] = {
+                        line = 0,
+                        character = 19,
+                      },
+                    },
+                  },
+                },
+              })
+              return
+            end
+
             callback(nil, {
               items = {
                 {
@@ -198,6 +219,19 @@ describe('vim.lsp.inline_completion', function()
       screen:expect({ grid = grid_applied_candidates })
     end)
 
+    it('correctly displays with absent/empty range', function()
+      exec_lua(function()
+        _G.empty = true
+      end)
+      feed('I')
+      screen:expect([[
+        function fibonacci({1:foobar})                           |
+        ^                                                     |
+        {1:~                                                    }|*11
+        {3:-- INSERT --}                                         |
+      ]])
+    end)
+
     it('accepts on_accept callback', function()
       feed('i')
       screen:expect({ grid = grid_with_candidates })
@@ -237,16 +271,11 @@ describe('vim.lsp.inline_completion', function()
           return b;
         }]]),
         range = {
-          end_ = {
-            buf = 1,
-            col = 20,
-            row = 0,
-          },
-          start = {
-            buf = 1,
-            col = 0,
-            row = 0,
-          },
+          0,
+          0,
+          0,
+          20,
+          1,
         },
       }, result)
     end)

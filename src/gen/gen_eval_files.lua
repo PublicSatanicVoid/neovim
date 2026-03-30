@@ -272,6 +272,12 @@ local function render_api_meta(_f, fun, write)
     write('--- @deprecated')
   end
 
+  local internal = vim.startswith(fun.name, 'nvim__')
+  if internal or (fun.since and tonumber(fun.since) == 0) then
+    write('--- WARNING: This feature is experimental/unstable.')
+    write('---')
+  end
+
   local desc = fun.desc
   if desc then
     write(util.prefix_lines('--- ', norm_text(desc)))
@@ -395,7 +401,7 @@ local function render_eval_meta(f, fun, write)
     write('--- @deprecated')
   end
 
-  local desc = fun.desc
+  local desc = fun.desc --[[@as string?]]
 
   if desc then
     --- @type string
@@ -406,7 +412,9 @@ local function render_eval_meta(f, fun, write)
     end
   end
 
-  for _, text in ipairs(vim.fn.reverse(fun.generics or {})) do
+  for _, text in
+    ipairs(vim.fn.reverse(fun.generics or {} --[[@as string[] ]]))
+  do
     write(fmt('--- @generic %s', text))
   end
 
@@ -586,7 +594,12 @@ local function render_option_meta(_f, opt, write)
     write('--- @type ' .. OPTION_TYPES[opt.type])
   end
 
-  write('vim.o.' .. opt.full_name .. ' = ' .. render_option_default(opt.defaults))
+  write(
+    'vim.o.'
+      .. opt.full_name
+      .. ' = '
+      .. render_option_default(opt.defaults --[[@as vim.option_defaults]])
+  )
   if opt.abbreviation then
     write('vim.o.' .. opt.abbreviation .. ' = vim.o.' .. opt.full_name)
   end
@@ -777,7 +790,7 @@ local function render_option_doc(_f, opt, write)
 
   local otype = opt.type == 'boolean' and 'boolean' or opt.type
   if opt.defaults.doc or opt.defaults.if_true ~= nil or opt.defaults.meta ~= nil then
-    local v = render_option_default(opt.defaults, true)
+    local v = render_option_default(opt.defaults --[[@as vim.option_defaults]], true)
     local pad = string.rep('\t', math.max(1, math.ceil((24 - #name_str) / 8)))
     if opt.defaults.doc then
       local deflen = #fmt('%s%s%s (', name_str, pad, otype)

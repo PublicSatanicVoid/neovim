@@ -1268,7 +1268,7 @@ static TriState decor_spell_nav_col(win_T *wp, linenr_T lnum, linenr_T *decor_ln
     decor_redraw_line(wp, lnum - 1, &decor_state);
     *decor_lnum = lnum;
   }
-  decor_redraw_col(wp, col, 0, false, &decor_state);
+  decor_redraw_col(wp, col, 0, false, &decor_state, MAXCOL);
   return decor_state.spell;
 }
 
@@ -1486,7 +1486,7 @@ size_t spell_move_to(win_T *wp, int dir, smt_T behaviour, bool curline, hlf_T *a
         lnum = wp->w_buffer->b_ml.ml_line_count;
         wrapped = true;
         if (!shortmess(SHM_SEARCH)) {
-          give_warning(_(top_bot_msg), true);
+          give_warning(_(top_bot_msg), true, false);
         }
       }
       capcol = -1;
@@ -1501,7 +1501,7 @@ size_t spell_move_to(win_T *wp, int dir, smt_T behaviour, bool curline, hlf_T *a
         lnum = 1;
         wrapped = true;
         if (!shortmess(SHM_SEARCH)) {
-          give_warning(_(bot_top_msg), true);
+          give_warning(_(bot_top_msg), true, false);
         }
       }
 
@@ -1610,7 +1610,7 @@ static void spell_load_lang(char *lang)
       // Plugins aren't loaded yet, so nvim/spellfile.lua cannot handle this case.
       char autocmd_buf[512] = { 0 };
       snprintf(autocmd_buf, sizeof(autocmd_buf),
-               "autocmd VimEnter * call v:lua.require'nvim.spellfile'.load_file('%s')|set spell",
+               "autocmd VimEnter * call v:lua.require'nvim.spellfile'.get('%s')|set spell",
                lang);
       do_cmdline_cmd(autocmd_buf);
     } else {
@@ -1955,9 +1955,8 @@ char *parse_spelllang(win_T *wp)
   // Loop over comma separated language names.
   for (char *splp = spl_copy; *splp != NUL;) {
     // Get one language name.
-    copy_option_part(&splp, lang, MAXWLEN, ",");
+    int len = (int)copy_option_part(&splp, lang, MAXWLEN, ",");
     char *region = NULL;
-    int len = (int)strlen(lang);
 
     if (!valid_spelllang(lang)) {
       continue;
@@ -2089,8 +2088,8 @@ char *parse_spelllang(win_T *wp)
       int_wordlist_spl(spf_name);
     } else {
       // One entry in 'spellfile'.
-      copy_option_part(&spf, spf_name, MAXPATHL - 4, ",");
-      strcat(spf_name, ".spl");
+      int len = (int)copy_option_part(&spf, spf_name, MAXPATHL - 4, ",");
+      STRCPY(spf_name + len, ".spl");
       int c;
 
       // If it was already found above then skip it.
@@ -3187,16 +3186,21 @@ void ex_spellinfo(exarg_T *eap)
     return;
   }
 
+  msg_ext_set_kind("list_cmd");
   msg_start();
   for (int lpi = 0; lpi < curwin->w_s->b_langp.ga_len && !got_int; lpi++) {
     langp_T *const lp = LANGP_ENTRY(curwin->w_s->b_langp, lpi);
     msg_puts("file: ");
     msg_puts(lp->lp_slang->sl_fname);
-    msg_putchar('\n');
     const char *const p = lp->lp_slang->sl_info;
+    if (lpi < curwin->w_s->b_langp.ga_len || p != NULL) {
+      msg_putchar('\n');
+    }
     if (p != NULL) {
       msg_puts(p);
-      msg_putchar('\n');
+      if (lpi < curwin->w_s->b_langp.ga_len - 1) {
+        msg_putchar('\n');
+      }
     }
   }
   msg_end();

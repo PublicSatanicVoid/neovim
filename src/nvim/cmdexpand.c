@@ -1140,7 +1140,9 @@ int showmatches(expand_T *xp, bool display_wildmenu, bool display_list, bool nos
   if (display_list) {
     msg_didany = false;                 // lines_left will be set
     msg_start();                        // prepare for paging
-    msg_putchar('\n');
+    if (!ui_has(kUIMessages)) {
+      msg_putchar('\n');
+    }
     ui_flush();
     cmdline_row = msg_row;
     msg_didany = false;                 // lines_left will be set again
@@ -1301,6 +1303,7 @@ char *addstar(char *fname, size_t len, int context)
         || ((context == EXPAND_TAGS_LISTFILES || context == EXPAND_TAGS)
             && fname[0] == '/')
         || context == EXPAND_CHECKHEALTH
+        || context == EXPAND_LSP
         || context == EXPAND_LUA) {
       retval = xstrnsave(fname, len);
     } else {
@@ -1780,7 +1783,8 @@ static const char *find_cmd_after_isearch_cmd(expand_T *xp, const char *arg)
 /// Set the completion context for the :unlet command. Always returns NULL.
 static const char *set_context_in_unlet_cmd(expand_T *xp, const char *arg)
 {
-  while ((xp->xp_pattern = strchr(arg, ' ')) != NULL) {
+  // NOLINTNEXTLINE(*-casting): remove once CI uses glibc 2.43
+  while ((xp->xp_pattern = (char *)strchr(arg, ' ')) != NULL) {
     arg = xp->xp_pattern + 1;
   }
 
@@ -2162,7 +2166,8 @@ static const char *set_context_by_cmdname(const char *cmd, cmdidx_T cmdidx, expa
   case CMD_bdelete:
   case CMD_bwipeout:
   case CMD_bunload:
-    while ((xp->xp_pattern = strchr(arg, ' ')) != NULL) {
+    // NOLINTNEXTLINE(*-casting): remove once CI uses glibc 2.43
+    while ((xp->xp_pattern = (char *)strchr(arg, ' ')) != NULL) {
       arg = xp->xp_pattern + 1;
     }
     FALLTHROUGH;
@@ -2309,6 +2314,10 @@ static const char *set_context_by_cmdname(const char *cmd, cmdidx_T cmdidx, expa
     break;
   case CMD_checkhealth:
     xp->xp_context = EXPAND_CHECKHEALTH;
+    break;
+
+  case CMD_lsp:
+    xp->xp_context = EXPAND_LSP;
     break;
 
   case CMD_retab:
@@ -2849,6 +2858,43 @@ static char *get_healthcheck_names(expand_T *xp FUNC_ATTR_UNUSED, int idx)
   return NULL;
 }
 
+/// Completion for |:lsp| command.
+///
+/// Given to ExpandGeneric() to obtain `:lsp` completion.
+/// @param[in] idx  Index of the item.
+/// @param[in] xp  Not used.
+static char *get_lsp_arg(expand_T *xp FUNC_ATTR_UNUSED, int idx)
+{
+  static Object names = OBJECT_INIT;
+  static char *last_xp_line = NULL;
+  static unsigned last_gen = 0;
+
+  if (last_xp_line == NULL || strcmp(last_xp_line,
+                                     xp->xp_line) != 0
+      || last_gen != get_cmdline_last_prompt_id()) {
+    xfree(last_xp_line);
+    last_xp_line = xstrdup(xp->xp_line);
+    MAXSIZE_TEMP_ARRAY(args, 1);
+    Error err = ERROR_INIT;
+
+    ADD_C(args, CSTR_AS_OBJ(xp->xp_line));
+    // Build the current command line as a Lua string argument
+    Object res = NLUA_EXEC_STATIC("return require'vim._core.ex_cmd'.lsp_complete(...)", args,
+                                  kRetObject, NULL,
+                                  &err);
+    api_clear_error(&err);
+    api_free_object(names);
+    names = res;
+    last_gen = get_cmdline_last_prompt_id();
+  }
+
+  if (names.type == kObjectTypeArray && idx < (int)names.data.array.size
+      && names.data.array.items[idx].type == kObjectTypeString) {
+    return names.data.array.items[idx].data.string.data;
+  }
+  return NULL;
+}
+
 /// Do the expansion based on xp->xp_context and "rmp".
 static int ExpandOther(char *pat, expand_T *xp, regmatch_T *rmp, char ***matches, int *numMatches)
 {
@@ -2891,6 +2937,7 @@ static int ExpandOther(char *pat, expand_T *xp, regmatch_T *rmp, char ***matches
     { EXPAND_SCRIPTNAMES, get_scriptnames_arg, true, false },
     { EXPAND_RETAB, get_retab_arg, true, true },
     { EXPAND_CHECKHEALTH, get_healthcheck_names, true, false },
+    { EXPAND_LSP, get_lsp_arg, true, false },
   };
   int ret = FAIL;
 
@@ -3039,9 +3086,9 @@ static int ExpandFromContext(expand_T *xp, char *pat, char ***matches, int *numM
   if (!fuzzy) {
     regmatch.regprog = vim_regcomp(pat, magic_isset() ? RE_MAGIC : 0);
     if (regmatch.regprog == NULL) {
+      xfree(tofree);
       return FAIL;
     }
-
     // set ignore-case according to p_ic, p_scs and pat
     regmatch.rm_ic = ignorecase(pat);
   }
@@ -3429,12 +3476,14 @@ static int ExpandUserDefined(const char *const pat, expand_T *xp, regmatch_T *re
     *e = keep;
 
     if (match) {
+      char *p = xmemdupz(s, (size_t)(e - s));
+
       if (!fuzzy) {
-        GA_APPEND(char *, &ga, xmemdupz(s, (size_t)(e - s)));
+        GA_APPEND(char *, &ga, p);
       } else {
         GA_APPEND(fuzmatch_str_T, &ga, ((fuzmatch_str_T){
           .idx = ga.ga_len,
-          .str = xmemdupz(s, (size_t)(e - s)),
+          .str = p,
           .score = score,
         }));
       }
@@ -3478,8 +3527,9 @@ static int ExpandUserList(expand_T *xp, char ***matches, int *numMatches)
         || TV_LIST_ITEM_TV(li)->vval.v_string == NULL) {
       continue;  // Skip non-string items and empty strings.
     }
+    char *p = xstrdup(TV_LIST_ITEM_TV(li)->vval.v_string);
 
-    GA_APPEND(char *, &ga, xstrdup(TV_LIST_ITEM_TV(li)->vval.v_string));
+    GA_APPEND(char *, &ga, p);
   });
   tv_list_unref(retlist);
 
@@ -4011,7 +4061,7 @@ static int copy_substring_from_pos(pos_T *start, pos_T *end, char **match, pos_T
   ga_concat_len(&ga, start_ptr, (size_t)segment_len);
   if (!is_single_line) {
     if (exacttext) {
-      ga_concat_len(&ga, "\\n", 2);
+      GA_CONCAT_LITERAL(&ga, "\\n");
     } else {
       ga_append(&ga, '\n');
     }
@@ -4021,10 +4071,11 @@ static int copy_substring_from_pos(pos_T *start, pos_T *end, char **match, pos_T
   if (!is_single_line) {
     for (linenr_T lnum = start->lnum + 1; lnum < end->lnum; lnum++) {
       char *line = ml_get(lnum);
-      ga_grow(&ga, ml_get_len(lnum) + 2);
-      ga_concat(&ga, line);
+      int linelen = ml_get_len(lnum);
+      ga_grow(&ga, linelen + 2);
+      ga_concat_len(&ga, line, (size_t)linelen);
       if (exacttext) {
-        ga_concat_len(&ga, "\\n", 2);
+        GA_CONCAT_LITERAL(&ga, "\\n");
       } else {
         ga_append(&ga, '\n');
       }

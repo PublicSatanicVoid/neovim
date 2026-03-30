@@ -162,10 +162,13 @@ void nvim_ui_attach(uint64_t channel_id, Integer width, Integer height, Dict opt
                   "UI already attached to channel: %" PRId64, channel_id);
     return;
   }
+  if (!ui_can_attach_more()) {
+    api_set_error(err, kErrorTypeException, "Maximum UI count reached");
+    return;
+  }
 
   if (width <= 0 || height <= 0) {
-    api_set_error(err, kErrorTypeValidation,
-                  "Expected width > 0 and height > 0");
+    api_set_error(err, kErrorTypeValidation, "Expected width > 0 and height > 0");
     return;
   }
   RemoteUI *ui = xcalloc(1, sizeof(RemoteUI));
@@ -267,55 +270,18 @@ void nvim_ui_detach(uint64_t channel_id, Error *err)
 /// Sends a "restart" UI event to the UI on the given channel.
 ///
 /// @return  false if there is no UI on the channel, otherwise true
-bool remote_ui_restart(uint64_t channel_id, Error *err)
+bool remote_ui_restart(uint64_t channel_id, const char *listen_addr, Error *err)
 {
   RemoteUI *ui = get_ui_or_err(channel_id, err);
   if (!ui) {
     return false;
   }
 
-  MAXSIZE_TEMP_ARRAY(args, 2);
-
-  ADD_C(args, CSTR_AS_OBJ(get_vim_var_str(VV_PROGPATH)));
-
-  Arena arena = ARENA_EMPTY;
-  const list_T *l = get_vim_var_list(VV_ARGV);
-  int argc = tv_list_len(l);
-  assert(argc > 0);
-  Array argv = arena_array(&arena, (size_t)argc + 1);
-  bool had_minmin = false;
-  bool skipping_minc = false;  // Skip -c <cmd> from argv.
-  bool first_minc = true;  // Avoid skipping the first -c <cmd> from argv.
-  TV_LIST_ITER_CONST(l, li, {
-    const char *arg = tv_get_string(TV_LIST_ITEM_TV(li));
-    if (argv.size > 0 && !had_minmin && strequal(arg, "--")) {
-      had_minmin = true;
-      skipping_minc = false;
-    }
-    bool startswith_min = strlen(arg) > 0 && arg[0] == '-';
-    bool startswith_minmin = strlen(arg) > 1 && arg[0] == '-' && arg[1] == '-';
-    if (skipping_minc && (startswith_min || startswith_minmin)) {
-      skipping_minc = false;
-    }
-    if (!had_minmin && !skipping_minc && strequal(arg, "-c")) {
-      if (!first_minc) {
-        skipping_minc = true;
-        continue;
-      }
-      first_minc = false;
-    }
-    // Exclude --embed/--headless/-c <cmd> from `argv`, as the client may start the server in a
-    // different way than how the server was originally started.
-    // Eg: 'nvim -c foo -c bar --embed --headless -- example.txt' would be parsed as { 'nvim', '-c', 'foo', '--', 'example.txt' }.
-    if (argv.size == 0 || had_minmin
-        || (!strequal(arg, "--embed") && !strequal(arg, "--headless") && !skipping_minc)) {
-      ADD_C(argv, CSTR_AS_OBJ(arg));
-    }
-  });
-  ADD_C(args, ARRAY_OBJ(argv));
+  MAXSIZE_TEMP_ARRAY(args, 1);
+  ADD_C(args, CSTR_AS_OBJ(listen_addr));
 
   push_call(ui, "restart", args);
-  arena_mem_free(arena_finish(&arena));
+  ui_flush_buf(ui, false);
   return true;
 }
 
@@ -469,7 +435,9 @@ static void ui_set_option(RemoteUI *ui, bool init, String name, Object value, Er
     }
   }
 
-  api_set_error(err, kErrorTypeValidation, "No such UI option: %s", name.data);
+  VALIDATE_S(false, "UI option", name.data, {
+    return;
+  });
 }
 
 /// Tell Nvim to resize a grid. Triggers a grid_resize event with the requested
@@ -517,8 +485,7 @@ void nvim_ui_pum_set_height(uint64_t channel_id, Integer height, Error *err)
   }
 
   if (!ui->ui_ext[kUIPopupmenu]) {
-    api_set_error(err, kErrorTypeValidation,
-                  "It must support the ext_popupmenu option");
+    api_set_error(err, kErrorTypeValidation, "UI must support the ext_popupmenu option");
     return;
   }
 

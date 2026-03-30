@@ -27,9 +27,9 @@ void visual_bell(void)
   FUNC_API_SINCE(3);
 void flush(void)
   FUNC_API_SINCE(3) FUNC_API_REMOTE_IMPL;
-void connect(Array args)
+void connect(String server_addr)
   FUNC_API_SINCE(14) FUNC_API_REMOTE_ONLY FUNC_API_REMOTE_IMPL FUNC_API_CLIENT_IMPL;
-void restart(String progpath, Array argv)
+void restart(String listen_addr)
   FUNC_API_SINCE(14) FUNC_API_REMOTE_ONLY FUNC_API_REMOTE_IMPL FUNC_API_CLIENT_IMPL;
 void suspend(void)
   FUNC_API_SINCE(3);
@@ -165,8 +165,8 @@ void wildmenu_hide(void)
   FUNC_API_SINCE(3) FUNC_API_REMOTE_ONLY;
 
 void msg_show(String kind, Array content, Boolean replace_last, Boolean history, Boolean append,
-              Object id)
-  FUNC_API_SINCE(6) FUNC_API_FAST FUNC_API_REMOTE_ONLY;
+              Object id, String trigger)
+  FUNC_API_SINCE(6) FUNC_API_REMOTE_ONLY;
 void msg_clear(void)
   FUNC_API_SINCE(6) FUNC_API_REMOTE_ONLY;
 void msg_showcmd(Array content)

@@ -294,18 +294,18 @@ end
 --- source buffer as its only argument and should return a string.
 --- @field title (string|fun(bufnr:integer):string|nil)?
 
---- Open a window that displays a textual representation of the undotree.
+--- Open a window that displays a textual representation of the [undo-tree], or closes the window if
+--- it is already open. Can also be shown with `:Undotree`. [:Undotree]()
 ---
 --- While in the window, moving the cursor changes the undo.
 ---
---- Load the plugin with this command:
+--- The plugin is not loaded by default; use `:packadd` to activate it:
 --- ```
----         packadd nvim.undotree
+--- :packadd nvim.undotree
 --- ```
----
---- Can also be shown with `:Undotree`. [:Undotree]()
 ---
 --- @param opts vim.undotree.opts?
+--- @return boolean? Returns true if the window was already open, nil otherwise
 function M.open(opts)
   -- The following lines of code was copied from
   -- `vim.treesitter.dev.inspect_tree` and then modified to fit

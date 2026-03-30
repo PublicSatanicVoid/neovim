@@ -92,9 +92,8 @@ void change_warning(buf_T *buf, int col)
     set_vim_var_string(VV_WARNINGMSG, _(w_readonly), -1);
     msg_clr_eos();
     msg_end();
-    if (msg_silent == 0 && !silent_mode && ui_active() && !ui_has(kUIMessages)) {
-      ui_flush();
-      os_delay(1002, true);  // give the user time to think about it
+    if (msg_silent == 0 && !silent_mode && ui_active()) {
+      msg_delay(1002, true);  // give the user time to think about it
     }
     buf->b_did_warn = true;
     redraw_cmdline = false;  // don't redraw and erase the message
@@ -132,8 +131,7 @@ void changed(buf_T *buf)
       // message.  Since we could be anywhere, call wait_return() now,
       // and don't let the emsg() set msg_scroll.
       if (need_wait_return && emsg_silent == 0 && !in_assert_fails && !ui_has(kUIMessages)) {
-        ui_flush();
-        os_delay(2002, true);
+        msg_delay(2002, true);
         wait_return(true);
         msg_scroll = save_msg_scroll;
       } else {
@@ -179,9 +177,13 @@ static void changed_lines_invalidate_win(win_T *wp, linenr_T lnum, colnr_T col, 
     changed_cline_bef_curs(wp);
   }
   if (wp->w_botline >= lnum) {
-    // Assume that botline doesn't change (inserted lines make
-    // other lines scroll down below botline).
-    approximate_botline_win(wp);
+    if (xtra < 0) {
+      invalidate_botline_win(wp);
+    } else {
+      // Assume that botline doesn't change (inserted lines make
+      // other lines scroll down below botline).
+      approximate_botline_win(wp);
+    }
   }
 
   // If lines have been inserted/deleted and the buffer has virt_lines, or
@@ -252,7 +254,7 @@ static void changed_common(buf_T *buf, linenr_T lnum, colnr_T col, linenr_T lnum
 
     if (curwin->w_buffer == buf) {
       if (lnum >= curwin->w_topline && lnum <= curwin->w_botline) {
-        view = mark_view_make(curwin->w_topline, curwin->w_cursor);
+        view = mark_view_make(curwin, curwin->w_cursor);
       }
     }
     RESET_FMARK(&buf->b_last_change, ((pos_T) { lnum, col, 0 }), buf->handle, view);
@@ -939,14 +941,14 @@ int del_bytes(colnr_T count, bool fixpos_arg, bool use_delcombine)
     ml_add_deleted_len(curbuf->b_ml.ml_line_ptr, oldlen);
     newp = oldp;                            // use same allocated memory
   } else {                                  // need to allocate a new line
-    newp = xmalloc((size_t)newlen + 1);
+    newp = xmallocz((size_t)newlen);
     memmove(newp, oldp, (size_t)col);
   }
   memmove(newp + col, oldp + col + count, (size_t)movelen);
   if (alloc_newp) {
     ml_replace(lnum, newp, false);
   } else {
-    curbuf->b_ml.ml_line_len -= count;
+    curbuf->b_ml.ml_line_textlen = newlen + 1;
   }
 
   // mark the buffer as changed and prepare for displaying
@@ -1240,6 +1242,7 @@ bool open_line(int dir, int flags, int second_line_indent, bool *did_do_comment)
     char *lead_repl = NULL;                 // replaces comment leader
     int lead_repl_len = 0;                  // length of *lead_repl
     char lead_middle[COM_MAX_LEN];          // middle-comment string
+    int lead_middle_len;                    // length of the lead_middle
     char lead_end[COM_MAX_LEN];             // end-comment string
     char *comment_end = NULL;               // where lead_end has been found
     int extra_space = false;                // append extra space
@@ -1274,7 +1277,7 @@ bool open_line(int dir, int flags, int second_line_indent, bool *did_do_comment)
           }
           p++;
         }
-        copy_option_part(&p, lead_middle, COM_MAX_LEN, ",");
+        lead_middle_len = (int)copy_option_part(&p, lead_middle, COM_MAX_LEN, ",");
 
         while (*p && p[-1] != ':') {  // find end of end flags
           // Check whether we allow automatic ending of comments
@@ -1305,7 +1308,7 @@ bool open_line(int dir, int flags, int second_line_indent, bool *did_do_comment)
         if (lead_len > 0) {
           if (current_flag == COM_START) {
             lead_repl = lead_middle;
-            lead_repl_len = (int)strlen(lead_middle);
+            lead_repl_len = lead_middle_len;
           }
 
           // If we have hit RETURN immediately after the start

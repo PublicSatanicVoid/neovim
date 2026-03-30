@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef MSWIN
+# include <direct.h>
+#endif
 
 #include "auto/config.h"
 #include "nvim/ascii_defs.h"
@@ -55,22 +58,22 @@ FileComparison path_full_compare(char *const s1, char *const s2, const bool chec
                                  const bool expandenv)
   FUNC_ATTR_NONNULL_ALL
 {
-  char exp1[MAXPATHL];
+  char expanded1[MAXPATHL];
   char full1[MAXPATHL];
   char full2[MAXPATHL];
   FileID file_id_1, file_id_2;
 
   if (expandenv) {
-    expand_env(s1, exp1, MAXPATHL);
+    expand_env(s1, expanded1, MAXPATHL);
   } else {
-    xstrlcpy(exp1, s1, MAXPATHL);
+    xstrlcpy(expanded1, s1, MAXPATHL);
   }
-  bool id_ok_1 = os_fileid(exp1, &file_id_1);
+  bool id_ok_1 = os_fileid(expanded1, &file_id_1);
   bool id_ok_2 = os_fileid(s2, &file_id_2);
   if (!id_ok_1 && !id_ok_2) {
     // If os_fileid() doesn't work, may compare the names.
     if (checkname) {
-      vim_FullName(exp1, full1, MAXPATHL, false);
+      vim_FullName(expanded1, full1, MAXPATHL, false);
       vim_FullName(s2, full2, MAXPATHL, false);
       if (path_fnamecmp(full1, full2) == 0) {
         return kEqualFileNames;
@@ -376,6 +379,38 @@ int path_fnamencmp(const char *const fname1, const char *const fname2, size_t le
 
   const char *p1 = fname1;
   const char *p2 = fname2;
+
+# ifdef MSWIN
+  // To allow proper comparison of absolute paths:
+  //   - one with explicit drive letter C:\xxx
+  //   - another with implicit drive letter \xxx
+  // advance the pointer, of the explicit one, to skip the drive
+  for (int swap = 0, drive = NUL; swap < 2; swap++) {
+    // Handle absolute paths with implicit drive letter
+    c1 = utf_ptr2char(p1);
+    c2 = utf_ptr2char(p2);
+
+    if ((c1 == '/' || c1 == '\\') && ASCII_ISALPHA(c2)) {
+      drive = mb_toupper(c2) - 'A' + 1;
+
+      // Check for the colon
+      p2 += utfc_ptr2len(p2);
+      c2 = utf_ptr2char(p2);
+      if (c2 == ':' && drive == _getdrive()) {  // skip the drive for comparison
+        p2 += utfc_ptr2len(p2);
+        break;
+      } else {  // ignore
+        p2 -= utfc_ptr2len(p2);
+      }
+    }
+
+    // swap pointers
+    const char *tmp = p1;
+    p1 = p2;
+    p2 = tmp;
+  }
+# endif
+
   while (len > 0) {
     c1 = utf_ptr2char(p1);
     c2 = utf_ptr2char(p2);
@@ -1740,18 +1775,14 @@ int path_is_url(const char *p)
   return 0;
 }
 
-/// Check if "fname" starts with "name://" or "name:\\".
+/// Check if "fname" starts with "name:/" or "name:\".
 ///
 /// @param  fname         is the filename to test
-/// @return URL_SLASH for "name://", URL_BACKSLASH for "name:\\", zero otherwise.
+/// @return URL_SLASH for "name:/", URL_BACKSLASH for "name:\", zero otherwise.
 int path_with_url(const char *fname)
   FUNC_ATTR_NONNULL_ALL
 {
   const char *p;
-
-  // We accept alphabetic characters and a dash in scheme part.
-  // RFC 3986 allows for more, but it increases the risk of matching
-  // non-URL text.
 
   // first character must be alpha
   if (!ASCII_ISALPHA(*fname)) {
@@ -1762,11 +1793,11 @@ int path_with_url(const char *fname)
     return 0;
   }
 
-  // check body: alpha or dash
-  for (p = fname + 1; (ASCII_ISALPHA(*p) || (*p == '-')); p++) {}
+  // check body: (alpha, digit, '+', '-', '.') following RFC3986
+  for (p = fname + 1; (ASCII_ISALNUM(*p) || (*p == '+') || (*p == '-') || (*p == '.')); p++) {}
 
-  // check last char is not a dash
-  if (p[-1] == '-') {
+  // check last char is not '+', '-', or '.'
+  if ((p[-1] == '+') || (p[-1] == '-') || (p[-1] == '.')) {
     return 0;
   }
 
@@ -1838,7 +1869,7 @@ int vim_FullName(const char *fname, char *buf, size_t len, bool force)
 /// the root may have relative paths (like dir/../subdir) or symlinks
 /// embedded, or even extra separators (//).  This function addresses
 /// those possibilities, returning a resolved absolute path.
-/// For MS-Windows, this also expands names like "longna~1".
+/// For MS-Windows, this also provides drive letter for all absolute paths.
 ///
 /// @param fname is the filename to expand
 /// @return [allocated] Full path (NULL for failure).
@@ -1852,6 +1883,10 @@ char *fix_fname(const char *fname)
       || strstr(fname, "//") != NULL
 # ifdef BACKSLASH_IN_FILENAME
       || strstr(fname, "\\\\") != NULL
+# endif
+# ifdef MSWIN
+      || fname[0] == '/'
+      || fname[0] == '\\'
 # endif
       ) {
     return FullName_save(fname, false);
@@ -2086,7 +2121,10 @@ char *path_shorten_fname(char *full_path, char *dir_name)
     return NULL;
   }
 
-  return p + 1;
+  do {
+    p++;
+  } while (vim_ispathsep_nocolon(*p));
+  return p;
 }
 
 /// Invoke expand_wildcards() for one pattern
@@ -2332,11 +2370,18 @@ static int path_to_absolute(const char *fname, char *buf, size_t len, int force)
   const char *end_of_path = fname;
 
   // expand it if forced or not an absolute path
-  if (force || !path_is_absolute(fname)) {
+  if (force || !path_is_absolute(fname)
+#ifdef MSWIN  // enforce drive letter on Windows paths
+      || fname[0] == '/' || fname[0] == '\\'
+#endif
+      ) {
     p = strrchr(fname, '/');
 #ifdef MSWIN
     if (p == NULL) {
       p = strrchr(fname, '\\');
+    }
+    if (p == NULL && ASCII_ISALPHA(fname[0]) && fname[1] == ':') {  // drive letter
+      p = fname + 1;
     }
 #endif
     if (p == NULL && strcmp(fname, "..") == 0) {
@@ -2344,14 +2389,14 @@ static int path_to_absolute(const char *fname, char *buf, size_t len, int force)
       p = fname + 2;
     }
     if (p != NULL) {
-      if (vim_ispathsep_nocolon(*p) && strcmp(p + 1, "..") == 0) {
+      if (vim_ispathsep(*p) && strcmp(p + 1, "..") == 0) {
         // For "/path/dir/.." include the "/..".
         p += 3;
       }
       assert(p >= fname);
       memcpy(relative_directory, fname, (size_t)(p - fname + 1));
       relative_directory[p - fname + 1] = NUL;
-      end_of_path = (vim_ispathsep_nocolon(*p) ? p + 1 : p);
+      end_of_path = (vim_ispathsep(*p) ? p + 1 : p);
     } else {
       relative_directory[0] = NUL;
     }
@@ -2376,8 +2421,9 @@ bool path_is_absolute(const char *fname)
     return false;
   }
   // A name like "d:/foo" and "//server/share" is absolute
-  return ((isalpha((uint8_t)fname[0]) && fname[1] == ':' && vim_ispathsep_nocolon(fname[2]))
-          || (vim_ispathsep_nocolon(fname[0]) && fname[0] == fname[1]));
+  // /foo and \foo are absolute too because Windows keeps a current drive.
+  return ((ASCII_ISALPHA(fname[0]) && fname[1] == ':' && vim_ispathsep_nocolon(fname[2]))
+          || vim_ispathsep_nocolon(fname[0]));
 #else
   // UNIX: This just checks if the file name starts with '/' or '~'.
   return *fname == '/' || *fname == '~';

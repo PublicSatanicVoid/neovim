@@ -108,9 +108,9 @@ func Test_options_command()
 
   " Check if the option-window is opened horizontally.
   wincmd j
-  call assert_notequal('option-window', bufname(''))
+  call assert_notequal('nvim-optwin://optwin', bufname(''))
   wincmd k
-  call assert_equal('option-window', bufname(''))
+  call assert_equal('nvim-optwin://optwin', bufname(''))
   " close option-window
   close
 
@@ -118,9 +118,9 @@ func Test_options_command()
   vert options
   " Check if the option-window is opened vertically.
   wincmd l
-  call assert_notequal('option-window', bufname(''))
+  call assert_notequal('nvim-optwin://optwin', bufname(''))
   wincmd h
-  call assert_equal('option-window', bufname(''))
+  call assert_equal('nvim-optwin://optwin', bufname(''))
   " close option-window
   close
 
@@ -141,16 +141,16 @@ func Test_options_command()
   tab options
   " Check if the option-window is opened in a tab.
   normal gT
-  call assert_notequal('option-window', bufname(''))
+  call assert_notequal('nvim-optwin://optwin', bufname(''))
   normal gt
-  call assert_equal('option-window', bufname(''))
+  call assert_equal('nvim-optwin://optwin', bufname(''))
   " close option-window
   close
 
   " Open the options window browse
   if has('browse')
     browse set
-    call assert_equal('option-window', bufname(''))
+    call assert_equal('nvim-optwin://optwin', bufname(''))
     close
   endif
 endfunc
@@ -543,7 +543,7 @@ func Test_set_completion_string_values()
   endif
   call assert_equal('.', getcompletion('set complete=', 'cmdline')[1])
   call assert_equal('menu', getcompletion('set completeopt=', 'cmdline')[1])
-  call assert_equal('keyword', getcompletion('set completefuzzycollect=', 'cmdline')[0])
+  " call assert_equal('keyword', getcompletion('set completefuzzycollect=', 'cmdline')[0])
   if exists('+completeslash')
     call assert_equal('backslash', getcompletion('set completeslash=', 'cmdline')[1])
   endif
@@ -628,7 +628,9 @@ func Test_set_completion_string_values()
 
   call assert_equal('eol', getcompletion('set listchars+=', 'cmdline')[0])
   call assert_equal(['multispace', 'leadmultispace'], getcompletion('set listchars+=', 'cmdline')[-2:])
+  call assert_equal(['tab', 'leadtab'], getcompletion('set listchars+=', 'cmdline')[5:6])
   call assert_equal('eol', getcompletion('setl listchars+=', 'cmdline')[0])
+  call assert_equal(['tab', 'leadtab'], getcompletion('setl listchars+=', 'cmdline')[5:6])
   call assert_equal(['multispace', 'leadmultispace'], getcompletion('setl listchars+=', 'cmdline')[-2:])
   call assert_equal('stl', getcompletion('set fillchars+=', 'cmdline')[0])
   call assert_equal('stl', getcompletion('setl fillchars+=', 'cmdline')[0])
@@ -680,7 +682,7 @@ func Test_set_completion_string_values()
   " call assert_equal("\"set hl=8bi i", @:)
 
   " messagesopt
-  call assert_equal(['history:', 'hit-enter', 'wait:'],
+  call assert_equal(['history:', 'hit-enter', 'progress:', 'wait:'],
         \ getcompletion('set messagesopt+=', 'cmdline')->sort())
 
   "
@@ -866,7 +868,7 @@ func Test_set_option_errors()
   call assert_fails('set rulerformat=%15(%%', 'E542:')
 
   " Test for 'statusline' errors
-  call assert_fails('set statusline=%$', 'E539:')
+  call assert_fails('set statusline=%^', 'E539:')  " Nvim: supports %$
   call assert_fails('set statusline=%{', 'E540:')
   call assert_fails('set statusline=%{%', 'E540:')
   call assert_fails('set statusline=%{%}', 'E539:')
@@ -874,7 +876,7 @@ func Test_set_option_errors()
   call assert_fails('set statusline=%)', 'E542:')
 
   " Test for 'tabline' errors
-  call assert_fails('set tabline=%$', 'E539:')
+  call assert_fails('set tabline=%^', 'E539:')  " Nvim: supports %$
   call assert_fails('set tabline=%{', 'E540:')
   call assert_fails('set tabline=%{%', 'E540:')
   call assert_fails('set tabline=%{%}', 'E539:')
@@ -1662,27 +1664,36 @@ endfunc
 
 " Test for setting boolean global-local option value
 func Test_set_boolean_global_local_option()
-  setglobal autoread
-  setlocal noautoread
+  CheckUnix
+
+  setglobal autoread fsync
+  setlocal noautoread nofsync
   call assert_equal(1, &g:autoread)
   call assert_equal(0, &l:autoread)
   call assert_equal(0, &autoread)
+  call assert_equal(1, &g:fsync)
+  call assert_equal(0, &l:fsync)
+  call assert_equal(0, &fsync)
 
   " :setlocal {option}< set the effective value of {option} to its global value.
-  "set autoread<
-  setlocal autoread<
+  "set autoread< fsync<
+  setlocal autoread< fsync<
   call assert_equal(1, &l:autoread)
   call assert_equal(1, &autoread)
+  call assert_equal(1, &l:fsync)
+  call assert_equal(1, &fsync)
 
   " :set {option}< removes the local value, so that the global value will be used.
-  setglobal noautoread
-  setlocal autoread
-  "setlocal autoread<
-  set autoread<
+  setglobal noautoread nofsync
+  setlocal autoread fsync
+  "setlocal autoread< fsync<
+  set autoread< fsync<
   call assert_equal(-1, &l:autoread)
   call assert_equal(0, &autoread)
+  call assert_equal(-1, &l:fsync)
+  call assert_equal(0, &fsync)
 
-  set autoread&
+  set autoread& fsync&
 endfunc
 
 func Test_set_in_sandbox()
@@ -2913,6 +2924,147 @@ func Test_showcmd()
   set nocp
   call assert_equal(1, &showcmd)
   let &cp = _cp
+endfunc
+
+" Test that :set+= and :set-= handle "key:value" items in comma-separated
+" options by matching on the key part.
+func Test_comma_option_key_value()
+  " += replaces existing item with same key
+  set diffopt=internal,filler,algorithm:patience
+  set diffopt+=algorithm:histogram
+  call assert_equal('internal,filler,algorithm:histogram', &diffopt)
+
+  " += with exact duplicate does nothing
+  set diffopt=internal,filler,algorithm:patience
+  set diffopt+=algorithm:patience
+  call assert_equal('internal,filler,algorithm:patience', &diffopt)
+
+  " += with multiple items, each processed individually
+  set diffopt=algorithm:patience,filler
+  set diffopt+=algorithm:histogram,filler
+  call assert_equal('filler,algorithm:histogram', &diffopt)
+
+  " += with non-colon item appends normally
+  set diffopt=internal,filler
+  set diffopt+=iwhite
+  call assert_equal('internal,filler,iwhite', &diffopt)
+
+  " += repeated updates
+  set diffopt=internal,filler,algorithm:patience
+  set diffopt+=algorithm:histogram
+  set diffopt+=algorithm:minimal
+  set diffopt+=algorithm:myers
+  call assert_equal('internal,filler,algorithm:myers', &diffopt)
+
+  " += all exact duplicates does nothing
+  set diffopt=internal,filler,algorithm:patience
+  set diffopt+=algorithm:patience,filler
+  call assert_equal('internal,filler,algorithm:patience', &diffopt)
+
+  " -= with "key:" removes item regardless of value
+  set diffopt=internal,filler,algorithm:patience
+  set diffopt-=algorithm:
+  call assert_equal('internal,filler', &diffopt)
+
+  " -= with "key:value" also matches by key
+  set diffopt=internal,filler,algorithm:patience
+  set diffopt-=algorithm:histogram
+  call assert_equal('internal,filler', &diffopt)
+
+  " -= without colon does not match "key:value" items
+  set diffopt=internal,filler,algorithm:patience
+  set diffopt-=algorithm
+  call assert_equal('internal,filler,algorithm:patience', &diffopt)
+
+  " -= with multiple non-colon items (order independent)
+  set diffopt=internal,filler,closeoff
+  set diffopt-=filler,internal
+  call assert_equal('closeoff', &diffopt)
+
+  " -= with multiple non-colon items (same order as in option)
+  set diffopt=internal,filler,closeoff
+  set diffopt-=internal,filler
+  call assert_equal('closeoff', &diffopt)
+
+  " -= with multiple items: non-colon and colon mixed
+  set diffopt& diffopt=internal,filler,closeoff,indent-heuristic,inline:char
+  set diffopt-=indent-heuristic,inline:char
+  call assert_equal('internal,filler,closeoff', &diffopt)
+
+  " -= with multiple items: colon and non-colon mixed (reverse order)
+  set diffopt& diffopt=internal,filler,closeoff,indent-heuristic,inline:char
+  set diffopt-=inline:char,indent-heuristic
+  call assert_equal('internal,filler,closeoff', &diffopt)
+
+  " += with multiple non-colon items
+  set diffopt=internal,filler
+  set diffopt+=closeoff,iwhite
+  call assert_equal('internal,filler,closeoff,iwhite', &diffopt)
+
+  " += with multiple non-colon items, some already exist
+  set diffopt=internal,filler,closeoff
+  set diffopt+=filler,iwhite
+  call assert_equal('internal,filler,closeoff,iwhite', &diffopt)
+
+  " -= with multiple items including key match
+  set diffopt=internal,filler,algorithm:patience
+  set diffopt-=algorithm:,filler
+  call assert_equal('internal', &diffopt)
+
+  " -= key match when item is at the beginning
+  set diffopt=algorithm:patience,internal,filler
+  set diffopt-=algorithm:
+  call assert_equal('internal,filler', &diffopt)
+
+  " -= key match when item is at the end
+  set diffopt=internal,filler,algorithm:patience
+  set diffopt-=algorithm:
+  call assert_equal('internal,filler', &diffopt)
+
+  " -= key match when item is the only item
+  set diffopt=algorithm:patience
+  set diffopt-=algorithm:
+  call assert_equal('', &diffopt)
+
+  " ^= prepends new item
+  set diffopt=internal,filler
+  set diffopt^=algorithm:histogram
+  call assert_equal('algorithm:histogram,internal,filler', &diffopt)
+
+  " ^= replaces item and prepends
+  set diffopt=internal,filler,algorithm:patience
+  set diffopt^=algorithm:histogram
+  call assert_equal('algorithm:histogram,internal,filler', &diffopt)
+
+  " ^= with exact duplicate does nothing
+  set diffopt=internal,filler,algorithm:patience
+  set diffopt^=algorithm:patience
+  call assert_equal('internal,filler,algorithm:patience', &diffopt)
+
+  set diffopt&
+
+  " Multiple items with the same key (set via :let)
+  " += with different value removes all items with the same key
+  let &lcs = 'eol:$,multispace:yY,space:x,multispace:XY'
+  set lcs+=multispace:AB
+  call assert_equal('eol:$,space:x,multispace:AB', &lcs)
+
+  " += with exact duplicate keeps it and removes others with the same key
+  let &lcs = 'eol:$,multispace:XY,space:x,multispace:XY'
+  set lcs+=multispace:XY
+  call assert_equal('eol:$,multispace:XY,space:x', &lcs)
+
+  " -= removes all items with the same key
+  let &lcs = 'eol:$,multispace:yY,space:x,multispace:XY'
+  set lcs-=multispace:
+  call assert_equal('eol:$,space:x', &lcs)
+
+  " ^= with different value removes all items and prepends
+  let &lcs = 'eol:$,multispace:yY,space:x,multispace:XY'
+  set lcs^=multispace:AB
+  call assert_equal('multispace:AB,eol:$,space:x', &lcs)
+
+  set lcs&
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

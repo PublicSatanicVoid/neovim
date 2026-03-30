@@ -54,6 +54,7 @@
 #include "nvim/types_defs.h"
 #include "nvim/vim_defs.h"
 #include "nvim/window.h"
+#include "nvim/winfloat.h"
 
 #include "optionstr.c.generated.h"
 
@@ -89,8 +90,6 @@ void didset_string_options(void)
   check_str_opt(kOptCasemap, NULL);
   check_str_opt(kOptBackupcopy, NULL);
   check_str_opt(kOptBelloff, NULL);
-  check_str_opt(kOptCompletefuzzycollect, NULL);
-  check_str_opt(kOptIsexpand, NULL);
   check_str_opt(kOptCompleteopt, NULL);
   check_str_opt(kOptSessionoptions, NULL);
   check_str_opt(kOptViewoptions, NULL);
@@ -712,7 +711,8 @@ const char *did_set_buftype(optset_T *args)
     // Set default value for 'comments'
     set_option_direct(kOptComments, STATIC_CSTR_AS_OPTVAL(""), OPT_LOCAL, SID_NONE);
     // set the prompt start position to lastline.
-    pos_T next_prompt = { .lnum = buf->b_ml.ml_line_count, .col = 1, .coladd = 0 };
+    pos_T next_prompt = { .lnum = buf->b_ml.ml_line_count, .col = buf->b_prompt_start.mark.col,
+                          .coladd = 0 };
     RESET_FMARK(&buf->b_prompt_start, next_prompt, 0, ((fmarkv_T)INIT_FMARKV));
   }
   if (win->w_status_height || global_stl_height()) {
@@ -1384,44 +1384,6 @@ const char *did_set_inccommand(optset_T *args FUNC_ATTR_UNUSED)
   return did_set_str_generic(args);
 }
 
-/// The 'isexpand' option is changed.
-const char *did_set_isexpand(optset_T *args)
-{
-  char *ise = p_ise;
-  char *p;
-  bool last_was_comma = false;
-
-  if (args->os_flags & OPT_LOCAL) {
-    ise = curbuf->b_p_ise;
-  }
-
-  for (p = ise; *p != NUL;) {
-    if (*p == '\\' && p[1] == ',') {
-      p += 2;
-      last_was_comma = false;
-      continue;
-    }
-
-    if (*p == ',') {
-      if (last_was_comma) {
-        return e_invarg;
-      }
-      last_was_comma = true;
-      p++;
-      continue;
-    }
-
-    last_was_comma = false;
-    MB_PTR_ADV(p);
-  }
-
-  if (last_was_comma) {
-    return e_invarg;
-  }
-
-  return NULL;
-}
-
 /// The 'iskeyword' option is changed.
 const char *did_set_iskeyword(optset_T *args)
 {
@@ -1898,14 +1860,20 @@ static const char *did_set_statustabline_rulerformat(optset_T *args, bool rulerf
   }
   const char *errmsg = NULL;
   char *s = *varp;
+  bool is_stl = args->os_idx == kOptStatusline;
 
   // reset statusline to default when setting global option and empty string is being set
-  if (args->os_idx == kOptStatusline
+  if (is_stl
       && ((args->os_flags & OPT_GLOBAL) || !(args->os_flags & OPT_LOCAL))
       && s[0] == NUL) {
     xfree(*varp);
     *varp = xstrdup(get_option_default(args->os_idx, args->os_flags).data.string.data);
     s = *varp;
+  }
+
+  // handle floating window statusline changes
+  if (is_stl && win && win->w_floating) {
+    win_config_float(win, win->w_config);
   }
 
   if (rulerformat && *s == '%') {
@@ -2284,17 +2252,18 @@ static const struct chars_tab fcs_tab[] = {
 
 static lcs_chars_T lcs_chars;
 static const struct chars_tab lcs_tab[] = {
-  CHARSTAB_ENTRY(&lcs_chars.eol,     "eol",            NULL, NULL),
-  CHARSTAB_ENTRY(&lcs_chars.ext,     "extends",        NULL, NULL),
-  CHARSTAB_ENTRY(&lcs_chars.nbsp,    "nbsp",           NULL, NULL),
-  CHARSTAB_ENTRY(&lcs_chars.prec,    "precedes",       NULL, NULL),
-  CHARSTAB_ENTRY(&lcs_chars.space,   "space",          NULL, NULL),
-  CHARSTAB_ENTRY(&lcs_chars.tab2,    "tab",            NULL, NULL),
-  CHARSTAB_ENTRY(&lcs_chars.lead,    "lead",           NULL, NULL),
-  CHARSTAB_ENTRY(&lcs_chars.trail,   "trail",          NULL, NULL),
-  CHARSTAB_ENTRY(&lcs_chars.conceal, "conceal",        NULL, NULL),
-  CHARSTAB_ENTRY(NULL,               "multispace",     NULL, NULL),
-  CHARSTAB_ENTRY(NULL,               "leadmultispace", NULL, NULL),
+  CHARSTAB_ENTRY(&lcs_chars.eol,      "eol",            NULL, NULL),
+  CHARSTAB_ENTRY(&lcs_chars.ext,      "extends",        NULL, NULL),
+  CHARSTAB_ENTRY(&lcs_chars.nbsp,     "nbsp",           NULL, NULL),
+  CHARSTAB_ENTRY(&lcs_chars.prec,     "precedes",       NULL, NULL),
+  CHARSTAB_ENTRY(&lcs_chars.space,    "space",          NULL, NULL),
+  CHARSTAB_ENTRY(&lcs_chars.tab2,     "tab",            NULL, NULL),
+  CHARSTAB_ENTRY(&lcs_chars.leadtab2, "leadtab",        NULL, NULL),
+  CHARSTAB_ENTRY(&lcs_chars.lead,     "lead",           NULL, NULL),
+  CHARSTAB_ENTRY(&lcs_chars.trail,    "trail",          NULL, NULL),
+  CHARSTAB_ENTRY(&lcs_chars.conceal,  "conceal",        NULL, NULL),
+  CHARSTAB_ENTRY(NULL,                "multispace",     NULL, NULL),
+  CHARSTAB_ENTRY(NULL,                "leadmultispace", NULL, NULL),
 };
 
 #undef CHARSTAB_ENTRY
@@ -2344,6 +2313,8 @@ const char *set_chars_option(win_T *wp, const char *value, CharsOption what, boo
 
   // first round: check for valid value, second round: assign values
   for (int round = 0; round <= (apply ? 1 : 0); round++) {
+    bool has_tab = false, has_leadtab = false;
+
     if (round > 0) {
       // After checking that the value is valid: set defaults
       for (int i = 0; i < entries; i++) {
@@ -2358,6 +2329,8 @@ const char *set_chars_option(win_T *wp, const char *value, CharsOption what, boo
       if (what == kListchars) {
         lcs_chars.tab1 = NUL;
         lcs_chars.tab3 = NUL;
+        lcs_chars.leadtab1 = NUL;
+        lcs_chars.leadtab3 = NUL;
 
         if (multispace_len > 0) {
           lcs_chars.multispace = xmalloc(((size_t)multispace_len + 1) * sizeof(schar_T));
@@ -2465,7 +2438,7 @@ const char *set_chars_option(win_T *wp, const char *value, CharsOption what, boo
         }
         schar_T c2 = 0;
         schar_T c3 = 0;
-        if (tab[i].cp == &lcs_chars.tab2) {
+        if (tab[i].cp == &lcs_chars.tab2 || tab[i].cp == &lcs_chars.leadtab2) {
           if (*s == NUL) {
             return field_value_err(errbuf, errbuflen,
                                    e_wrong_number_of_characters_for_field_str,
@@ -2485,6 +2458,11 @@ const char *set_chars_option(win_T *wp, const char *value, CharsOption what, boo
                                      tab[i].name.data);
             }
           }
+          if (tab[i].cp == &lcs_chars.tab2) {
+            has_tab = true;
+          } else {  // tab[i].cp == &lcs_chars.leadtab2
+            has_leadtab = true;
+          }
         }
 
         if (*s == ',' || *s == NUL) {
@@ -2493,6 +2471,10 @@ const char *set_chars_option(win_T *wp, const char *value, CharsOption what, boo
               lcs_chars.tab1 = c1;
               lcs_chars.tab2 = c2;
               lcs_chars.tab3 = c3;
+            } else if (tab[i].cp == &lcs_chars.leadtab2) {
+              lcs_chars.leadtab1 = c1;
+              lcs_chars.leadtab2 = c2;
+              lcs_chars.leadtab3 = c3;
             } else if (tab[i].cp != NULL) {
               *(tab[i].cp) = c1;
             }
@@ -2513,6 +2495,10 @@ const char *set_chars_option(win_T *wp, const char *value, CharsOption what, boo
       if (*p == ',') {
         p++;
       }
+    }
+
+    if (what == kListchars && has_leadtab && !has_tab) {
+      return e_leadtab_requires_tab;
     }
   }
 

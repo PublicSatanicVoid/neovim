@@ -64,8 +64,6 @@ Stop or detach the current UI
                 the channel to be closed, it may be (incorrectly) reported as
                 an error.
 
-                Note: Not supported on Windows yet.
-
 ------------------------------------------------------------------------------
 Restart Nvim
 
@@ -73,31 +71,28 @@ Restart Nvim
 :restart [+cmd] [command]
                 Restarts Nvim.
 
-                1. Stops Nvim using `:qall!` (or |+cmd|, if given).
-                2. Starts a new Nvim server using the same |v:argv|,
-                   optionally running [command] at startup. |-c|
-                3. Attaches the current UI to the new Nvim server. Other UIs
-                   (if any) will not reattach on restart (this may change in
-                   the future).
+                1. Stops Nvim using `:qall` (or |+cmd|, if given).
+                2. Starts a new Nvim server using the same |v:argv| (except
+                   `-- [file…]` files).
+                3. Attaches the current UI to the new Nvim server and runs
+                   `[command]` on it. Other UIs (if any) will not reattach
+                   on restart (this may change in the future).
 
-                Use with `:confirm` to prompt if changes have been made.
-
-                Example: stop with `:qall!`, then restart: >
+                Example: discard changes and stop with `:qall!`, then restart: >
                     :restart +qall!
 <                Example: restart and restore the current session: >
                     :mksession! Session.vim | restart source Session.vim
 <                Example: restart and update plugins: >
-                    :restart +qall! lua vim.pack.update()
+                    :restart lua vim.pack.update()
 <
                 Note: Only works if the UI and server are on the same system.
                 Note: If the UI hasn't implemented the "restart" UI event,
-                this command is equivalent to `:qall!`.
+                this command will lead to a dangling server process.
 
 ------------------------------------------------------------------------------
 Connect UI to a different server
 
                                                 *:connect*
-
 :connect {address}
                 Detaches the UI from the server it is currently attached to
                 and attaches it to the server at {address} instead.
@@ -329,26 +324,26 @@ configure which ones appear with the 'guioptions' option.
 
 The interface looks like this (with `:set guioptions=mlrb`):
 >
-                       +------------------------------+ `
-                       | File  Edit              Help | <- Menu bar (m) `
-                       +-+--------------------------+-+ `
-                       |^|                          |^| `
-                       |#| Text area.               |#| `
-                       | |                          | | `
-                       |v|__________________________|v| `
- Normal status line -> |-+ File.c              5,2  +-| `
- between Vim windows   |^|""""""""""""""""""""""""""|^| `
-                       | |                          | | `
-                       | | Another file buffer.     | | `
-                       | |                          | | `
-                       |#|                          |#| `
- Left scrollbar (l) -> |#|                          |#| <- Right `
-                       |#|                          |#|    scrollbar (r) `
-                       | |                          | | `
-                       |v|                          |v| `
-                       +-+--------------------------+-+ `
-                       | |< ####                   >| | <- Bottom `
-                       +-+--------------------------+-+    scrollbar (b) `
+                       +------------------------------+
+                       | File  Edit              Help | <- Menu bar (m)
+                       +-+--------------------------+-+
+                       |^|                          |^|
+                       |#| Text area.               |#|
+                       | |                          | |
+                       |v|__________________________|v|
+ Normal status line -> |-+ File.c              5,2  +-|
+ between Vim windows   |^|""""""""""""""""""""""""""|^|
+                       | |                          | |
+                       | | Another file buffer.     | |
+                       | |                          | |
+                       |#|                          |#|
+ Left scrollbar (l) -> |#|                          |#| <- Right
+                       |#|                          |#|    scrollbar (r)
+                       | |                          | |
+                       |v|                          |v|
+                       +-+--------------------------+-+
+                       | |< ####                   >| | <- Bottom
+                       +-+--------------------------+-+    scrollbar (b)
 <
 Any of the scrollbar or menu components may be turned off by not putting the
 appropriate letter in the 'guioptions' string.  The bottom scrollbar is

@@ -331,17 +331,6 @@ void *vim_findfile_init(char *path, char *filename, size_t filenamelen, char *st
     ff_expand_buffer.size = strlen(ff_expand_buffer.data);
 
     search_ctx->ffsc_start_dir = copy_string(ff_expand_buffer, NULL);
-
-#ifdef BACKSLASH_IN_FILENAME
-    // A path that starts with "/dir" is relative to the drive, not to the
-    // directory (but not for "//machine/dir").  Only use the drive name.
-    if ((*path == '/' || *path == '\\')
-        && path[1] != path[0]
-        && search_ctx->ffsc_start_dir.data[1] == ':') {
-      search_ctx->ffsc_start_dir.data[2] = NUL;
-      search_ctx->ffsc_start_dir.size = 2;
-    }
-#endif
   }
 
   // If stopdirs are given, split them into an array of pointers.
@@ -1679,6 +1668,7 @@ char *file_name_in_line(char *line, int col, int options, int count, char *rel_f
 
   // Search forward for the last char of the file name.
   // Also allow ":/" when ':' is not in 'isfname'.
+  // TODO(justinmk): Check for driveletter "x:/" at start, regardless of 'isfname'.
   len = path_has_drive_letter(ptr, strlen(ptr)) ? 2 : 0;
   while (vim_isfilec((uint8_t)ptr[len]) || (ptr[len] == '\\' && ptr[len + 1] == ' ')
          || ((options & FNAME_HYP) && path_is_url(ptr + len))

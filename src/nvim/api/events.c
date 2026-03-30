@@ -60,17 +60,12 @@ void nvim_ui_term_event(uint64_t channel_id, String event, Object value, Error *
   FUNC_API_SINCE(12) FUNC_API_REMOTE_ONLY
 {
   if (strequal("termresponse", event.data)) {
-    if (value.type != kObjectTypeString) {
-      api_set_error(err, kErrorTypeValidation, "termresponse must be a string");
+    VALIDATE_T("termresponse", kObjectTypeString, value.type, {
       return;
-    }
+    });
 
     const String termresponse = value.data.string;
     set_vim_var_string(VV_TERMRESPONSE, termresponse.data, (ptrdiff_t)termresponse.size);
-
-    MAXSIZE_TEMP_DICT(data, 1);
-    PUT_C(data, "sequence", value);
-    apply_autocmds_group(EVENT_TERMRESPONSE, NULL, NULL, true, AUGROUP_ALL, NULL, NULL,
-                         &DICT_OBJ(data));
+    do_termresponse_autocmd(termresponse);
   }
 }

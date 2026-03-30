@@ -151,11 +151,27 @@ RSC['client/registerCapability'] = function(_, params, ctx)
     vim.lsp._set_defaults(client, bufnr)
   end
   for _, reg in ipairs(params.registrations) do
-    if reg.method == 'textDocument/documentColor' then
-      for bufnr in pairs(client.attached_buffers) do
-        if vim.lsp.document_color.is_enabled(bufnr) then
-          vim.lsp.document_color._buf_refresh(bufnr, client.id)
+    -- The capability framework's attach loop only runs during initial Client:on_attach.
+    -- When a client dynamically registers a new method, we need to manually trigger
+    -- on_attach for capabilities that are now supported.
+    for _, Cap in pairs(vim.lsp._capability.all) do
+      if reg.method == Cap.method then
+        for bufnr in pairs(client.attached_buffers) do
+          if
+            client:supports_method(Cap.method, bufnr)
+            and vim.lsp._capability.is_enabled(Cap.name, { bufnr = bufnr, client_id = client.id })
+          then
+            local capability = Cap.active[bufnr] or Cap:new(bufnr)
+            if not capability.client_state[client.id] then
+              capability:on_attach(client.id)
+            end
+          end
         end
+      end
+    end
+    if reg.method == 'textDocument/diagnostic' then
+      for bufnr in pairs(client.attached_buffers) do
+        vim.lsp.diagnostic._refresh(bufnr, client.id)
       end
     end
   end
@@ -225,6 +241,9 @@ RSC['workspace/configuration'] = function(_, params, ctx)
         value = vim.NIL
       end
       table.insert(response, value)
+    else
+      -- If no section is provided, return settings as is
+      table.insert(response, client.settings)
     end
   end
   return response
@@ -247,11 +266,6 @@ end
 --- @private
 RCS['textDocument/diagnostic'] = function(...)
   return vim.lsp.diagnostic.on_diagnostic(...)
-end
-
---- @private
-RCS['textDocument/codeLens'] = function(...)
-  return vim.lsp.codelens.on_codelens(...)
 end
 
 --- @private
@@ -647,6 +661,16 @@ RSC['window/showDocument'] = function(_, params, ctx)
     focus = params.takeFocus,
   })
   return { success = success or false }
+end
+
+---@see https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#codeLens_refresh
+RSC['workspace/codeLens/refresh'] = function(err, result, ctx)
+  return vim.lsp.codelens.on_refresh(err, result, ctx)
+end
+
+---@see https://microsoft.github.io/language-server-protocol/specification/#diagnostic_refresh
+RSC['workspace/diagnostic/refresh'] = function(err, result, ctx)
+  return vim.lsp.diagnostic.on_refresh(err, result, ctx)
 end
 
 ---@see https://microsoft.github.io/language-server-protocol/specification/#workspace_inlayHint_refresh

@@ -1,7 +1,7 @@
 *index.txt*     Nvim
 
 
-		  VIM REFERENCE MANUAL    by Bram Moolenaar
+		  VIM REFERENCE MANUAL	  by Bram Moolenaar
 
 								*index*
 This file contains a list of all commands for each mode, with a tag and a
@@ -152,7 +152,7 @@ commands in CTRL-X submode				*i_CTRL-X_index*
 |i_CTRL-X_CTRL-Y|	CTRL-X CTRL-Y	scroll down
 |i_CTRL-X_CTRL-U|	CTRL-X CTRL-U	complete with 'completefunc'
 |i_CTRL-X_CTRL-V|	CTRL-X CTRL-V	complete like in : command line
-|i_CTRL-X_CTRL-Z|	CTRL-X CTRL-Z	stop completion, keeping the text as-is
+|i_CTRL-X_CTRL-Z|	CTRL-X CTRL-Z	stop completion, text is unchanged
 |i_CTRL-X_CTRL-]|	CTRL-X CTRL-]	complete tags
 |i_CTRL-X_s|		CTRL-X s	spelling suggestions
 
@@ -1057,7 +1057,8 @@ Tag		Command		Command-line editing-mode action	~
 				under the cursor literally
 		CTRL-S		not used, or used for terminal control flow
 |c_CTRL-T|	CTRL-T		previous match when 'incsearch' is active
-|c_CTRL-U|	CTRL-U		remove all characters
+|c_CTRL-U|	CTRL-U		remove all characters between the cursor
+				and beginning of command-line
 |c_CTRL-V|	CTRL-V		insert next non-digit literally, insert three
 				digit decimal number as a single byte.
 |c_CTRL-W|	CTRL-W		delete the word in front of the cursor
@@ -1126,7 +1127,7 @@ to terminal mode.
 You found it, Arthur!				*holy-grail*
 
 ==============================================================================
-6. EX commands				*Ex-commands* *ex-cmd-index* *:index*
+6. EX commands				*Ex-command* *ex-cmd-index* *:index*
 
 This is a brief but complete listing of all the ":" commands, without
 mentioning any arguments.  The optional part of the command name is inside [].
@@ -1420,6 +1421,7 @@ Tag		Command		Action ~
 |:lpfile|	:lpf[ile]	go to last location in previous file
 |:lrewind|	:lr[ewind]	go to the specified location, default first one
 |:ls|		:ls		list all buffers
+|:lsp|		:lsp		language server protocol
 |:ltag|		:lt[ag]		jump to tag and add matching tags to the
 				location list
 |:lunmap|	:lu[nmap]	like ":unmap!" but includes Lang-Arg mode

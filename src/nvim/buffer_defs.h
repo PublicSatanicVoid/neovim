@@ -575,7 +575,6 @@ struct file_buffer {
   char *b_p_fo;                 ///< 'formatoptions'
   char *b_p_flp;                ///< 'formatlistpat'
   int b_p_inf;                  ///< 'infercase'
-  char *b_p_ise;                ///< 'isexpand' local value
   char *b_p_isk;                ///< 'iskeyword'
   char *b_p_def;                ///< 'define' local value
   char *b_p_inc;                ///< 'include'
@@ -587,6 +586,7 @@ struct file_buffer {
   char *b_p_fp;                 ///< 'formatprg'
   char *b_p_fex;                ///< 'formatexpr'
   uint32_t b_p_fex_flags;       ///< flags for 'formatexpr'
+  int b_p_fs;                   ///< 'fsync'
   char *b_p_kp;                 ///< 'keywordprg'
   int b_p_lisp;                 ///< 'lisp'
   char *b_p_lop;                ///< 'lispoptions'
@@ -715,6 +715,7 @@ struct file_buffer {
   char *b_prompt_text;          // set by prompt_setprompt()
   Callback b_prompt_callback;   // set by prompt_setcallback()
   Callback b_prompt_interrupt;  // set by prompt_setinterrupt()
+  bool b_prompt_append_new_line;  // prompt_appendlines() should start a newline
   int b_prompt_insert;          // value for restart_edit when entering
                                 // a prompt buffer window.
   fmark_T b_prompt_start;       // Start of the editable area of a prompt buffer.
@@ -822,9 +823,10 @@ struct diffline_S {
   int lineoff;
 };
 
-#define SNAP_HELP_IDX   0
-#define SNAP_AUCMD_IDX 1
-#define SNAP_COUNT     2
+#define SNAP_HELP_IDX       0
+#define SNAP_AUCMD_IDX      1
+#define SNAP_QUICKFIX_IDX   2
+#define SNAP_COUNT          3
 
 /// Tab pages point to the top frame of each tab page.
 /// Note: Most values are NOT valid for the current tab page!  Use "curwin",
@@ -840,9 +842,10 @@ struct tabpage_S {
   win_T *tp_firstwin;         ///< first window in this Tab page
   win_T *tp_lastwin;          ///< last window in this Tab page
   int64_t tp_old_Rows_avail;  ///< ROWS_AVAIL when Tab page was left
-  int64_t tp_old_Columns;        ///< Columns when Tab page was left, -1 when
-                                 ///< calling win_new_screen_cols() postponed
+  int64_t tp_old_Columns;     ///< Columns when Tab page was left, -1 when
+                              ///< calling win_new_screen_cols() postponed
   OptInt tp_ch_used;          ///< value of 'cmdheight' when frame size was set
+  bool tp_did_tabclosedpre;   ///< whether TabClosedPre was triggered
 
   diff_T *tp_first_diff;
   buf_T *(tp_diffbuf[DB_COUNT]);
@@ -1054,6 +1057,9 @@ typedef struct {
   schar_T tab1;  ///< first tab character
   schar_T tab2;  ///< second tab character
   schar_T tab3;  ///< third tab character
+  schar_T leadtab1;
+  schar_T leadtab2;
+  schar_T leadtab3;
   schar_T lead;
   schar_T trail;
   schar_T *multispace;
@@ -1098,7 +1104,7 @@ struct window_S {
   synblock_T *w_s;                 ///< for :ownsyntax
 
   int w_ns_hl;
-  int w_ns_hl_winhl;  ///< when set to -1, 'winhighlight' shouldn't be used
+  int w_ns_hl_winhl;
   int w_ns_hl_active;
   int *w_ns_hl_attr;
 
@@ -1112,7 +1118,7 @@ struct window_S {
 
   win_T *w_prev;              ///< link to previous window
   win_T *w_next;              ///< link to next window
-  bool w_locked;                    ///< don't let autocommands close the window
+  int w_locked;                     ///< don't let autocommands close the window
 
   frame_T *w_frame;             ///< frame containing this window
 

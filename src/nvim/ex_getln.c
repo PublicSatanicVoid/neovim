@@ -317,7 +317,7 @@ bool parse_pattern_and_range(pos_T *incsearch_start, int *search_delim, int *ski
 
   // Skip over the range to find the command.
   char *cmd = skip_range(ea.cmd, NULL);
-  if (vim_strchr("sgvl", (uint8_t)(*cmd)) == NULL) {
+  if (vim_strchr("sgvlu", (uint8_t)(*cmd)) == NULL) {
     return false;
   }
 
@@ -768,6 +768,7 @@ static uint8_t *command_line_enter(int firstc, int count, int indent, bool clear
   }
 
   init_ccline(s->firstc, s->indent);
+  assert(ccline.cmdbuff != NULL);
   ccline.prompt_id = last_prompt_id++;
   ccline.level = cmdline_level;
 
@@ -845,7 +846,9 @@ static uint8_t *command_line_enter(int firstc, int count, int indent, bool clear
     });
 
     if (ERROR_SET(&err)) {
-      msg_putchar('\n');
+      if (!ui_has(kUIMessages)) {
+        msg_putchar('\n');
+      }
       msg_scroll = true;
       msg_puts_hl(err.msg, HLF_E, true);
       api_clear_error(&err);
@@ -933,6 +936,9 @@ static uint8_t *command_line_enter(int firstc, int count, int indent, bool clear
   // sure to still clean up to avoid memory corruption.
   if (cmdline_pum_active()) {
     cmdline_pum_remove(false);
+  } else {
+    // A previous cmdline_pum_remove() may have deferred redraw.
+    pum_check_clear();
   }
   wildmenu_cleanup(&ccline);
   s->did_wild_list = false;
@@ -974,7 +980,9 @@ static uint8_t *command_line_enter(int firstc, int count, int indent, bool clear
   redir_off = false;
 
   if (ERROR_SET(&err)) {
-    msg_putchar('\n');
+    if (!ui_has(kUIMessages)) {
+      msg_putchar('\n');
+    }
     emsg(err.msg);
     did_emsg = false;
     api_clear_error(&err);
@@ -1003,6 +1011,9 @@ theend:
   char *p = ccline.cmdbuff;
 
   if (ui_has(kUICmdline)) {
+    if (exmode_active) {
+      ui_ext_cmdline_block_append(0, p);
+    }
     ui_ext_cmdline_hide(s->gotesc);
   }
   if (!cmd_silent) {
@@ -1038,7 +1049,7 @@ static int command_line_check(VimState *state)
                            // that occurs while typing a command should
                            // cause the command not to be executed.
 
-  if (stuff_empty() && typebuf.tb_len == 0) {
+  if (ex_normal_busy == 0 && stuff_empty() && typebuf.tb_len == 0) {
     // There is no pending input from sources other than user input, so
     // Vim is going to wait for the user to type a key.  Consider the
     // command line typed even if next key will trigger a mapping.
@@ -1250,21 +1261,23 @@ static int command_line_wildchar_complete(CommandLineState *s)
   return (res == OK) ? CMDLINE_CHANGED : CMDLINE_NOT_CHANGED;
 }
 
-static void command_line_end_wildmenu(CommandLineState *s, bool key_is_wc)
+static void command_line_end_wildmenu(CommandLineState *s, bool key_is_wc, int c)
 {
   if (cmdline_pum_active()) {
-    s->skip_pum_redraw = (s->skip_pum_redraw && !key_is_wc
-                          && !ascii_iswhite(s->c)
-                          && (vim_isprintc(s->c)
-                              || s->c == K_BS || s->c == Ctrl_H || s->c == K_DEL
-                              || s->c == K_KDEL || s->c == Ctrl_W || s->c == Ctrl_U));
-    cmdline_pum_remove(s->skip_pum_redraw);
+    if (c != -1) {
+      s->skip_pum_redraw = (s->skip_pum_redraw && !key_is_wc
+                            && !ascii_iswhite(c)
+                            && (vim_isprintc(c)
+                                || c == K_BS || c == Ctrl_H || c == K_DEL
+                                || c == K_KDEL || c == Ctrl_W || c == Ctrl_U));
+    }
+    cmdline_pum_remove(c != -1 && s->skip_pum_redraw);
   }
   if (s->xpc.xp_numfiles != -1) {
     ExpandOne(&s->xpc, NULL, NULL, 0, WILD_FREE);
   }
   s->did_wild_list = false;
-  if (!p_wmnu || (s->c != K_UP && s->c != K_DOWN)) {
+  if (!p_wmnu || (c != K_UP && c != K_DOWN)) {
     s->xpc.xp_context = EXPAND_NOTHING;
   }
   s->wim_index = 0;
@@ -1281,6 +1294,14 @@ static int command_line_execute(VimState *state, int key)
   CommandLineState *s = (CommandLineState *)state;
   s->c = key;
 
+  // If the cmdline was replaced externally (e.g. by setcmdline()
+  // during an <expr> mapping), clean up the wildmenu completion
+  // state to avoid using stale completion data.
+  if (ccline.cmdbuff_replaced && s->xpc.xp_numfiles > 0) {
+    command_line_end_wildmenu(s, false, -1);
+  }
+  ccline.cmdbuff_replaced = false;
+
   // Skip wildmenu during history navigation via Up/Down keys
   if (s->c == K_WILD && s->did_hist_navigate) {
     s->did_hist_navigate = false;
@@ -1293,7 +1314,7 @@ static int command_line_execute(VimState *state, int key)
     } else if (s->c == K_COMMAND) {
       do_cmdline(NULL, getcmdkeycmd, NULL, DOCMD_NOWAIT);
     } else {
-      map_execute_lua(false);
+      map_execute_lua(false, false);
     }
     // If the window changed incremental search state is not valid.
     if (s->is_state.winid != curwin->handle) {
@@ -1311,7 +1332,7 @@ static int command_line_execute(VimState *state, int key)
         nextwild(&s->xpc, WILD_PUM_WANT, 0, s->firstc != '@');
         if (pum_want.finish) {
           nextwild(&s->xpc, WILD_APPLY, WILD_NO_BEEP, s->firstc != '@');
-          command_line_end_wildmenu(s, false);
+          command_line_end_wildmenu(s, false, s->c);
         }
       }
       pum_want.active = false;
@@ -1384,7 +1405,8 @@ static int command_line_execute(VimState *state, int key)
 
   int wild_type = 0;
   const bool key_is_wc = (s->c == p_wc && KeyTyped) || s->c == p_wcm;
-  if ((cmdline_pum_active() || wild_menu_showing || s->did_wild_list) && !key_is_wc) {
+  if ((cmdline_pum_active() || wild_menu_showing || s->did_wild_list)
+      && !key_is_wc && s->xpc.xp_numfiles > 0) {
     // Ctrl-Y: Accept the current selection and close the popup menu.
     // Ctrl-E: cancel the cmdline popup menu and return the original text.
     if (s->c == Ctrl_E || s->c == Ctrl_Y) {
@@ -1418,7 +1440,7 @@ static int command_line_execute(VimState *state, int key)
 
   // free expanded names when finished walking through matches
   if (end_wildmenu) {
-    command_line_end_wildmenu(s, key_is_wc);
+    command_line_end_wildmenu(s, key_is_wc, s->c);
   }
 
   if (p_wmnu) {
@@ -2837,7 +2859,9 @@ static void do_autocmd_cmdlinechanged(int firstc)
       restore_v_event(dict, &save_v_event);
     });
     if (ERROR_SET(&err)) {
-      msg_putchar('\n');
+      if (!ui_has(kUIMessages)) {
+        msg_putchar('\n');
+      }
       msg_scroll = true;
       msg_puts_hl(err.msg, HLF_E, true);
       api_clear_error(&err);
@@ -4048,7 +4072,7 @@ void compute_cmdrow(void)
   if (exmode_active || msg_scrolled != 0) {
     cmdline_row = Rows - 1;
   } else {
-    win_T *wp = lastwin_nofloating();
+    win_T *wp = lastwin_nofloating(NULL);
     cmdline_row = wp->w_winrow + wp->w_height
                   + wp->w_hsep_height + wp->w_status_height + global_stl_height();
   }
@@ -4374,6 +4398,7 @@ static int set_cmdline_str(const char *str, int pos)
 
   p->cmdpos = pos < 0 || pos > p->cmdlen ? p->cmdlen : pos;
   new_cmdpos = p->cmdpos;
+  p->cmdbuff_replaced = true;
 
   redrawcmd();
 
@@ -4586,7 +4611,7 @@ static int open_cmdwin(void)
     }
     // win_close() autocommands may have already deleted the buffer.
     if (newbuf_status == OK && bufref_valid(&bufref) && bufref.br_buf != curbuf) {
-      close_buffer(NULL, bufref.br_buf, DOBUF_WIPE, false, false);
+      close_buffer(NULL, bufref.br_buf, DOBUF_WIPE, false, false, false);
     }
 
     cmdwin_type = 0;
@@ -4649,7 +4674,7 @@ static int open_cmdwin(void)
   curwin->w_cursor.lnum = curbuf->b_ml.ml_line_count;
   curwin->w_cursor.col = ccline.cmdpos;
   changed_line_abv_curs();
-  invalidate_botline(curwin);
+  invalidate_botline_win(curwin);
   ui_ext_cmdline_hide(false);
   redraw_later(curwin, UPD_SOME_VALID);
 
@@ -4771,7 +4796,7 @@ static int open_cmdwin(void)
     // win_close() may have already wiped the buffer when 'bh' is
     // set to 'wipe', autocommands may have closed other windows
     if (bufref_valid(&bufref) && bufref.br_buf != curbuf) {
-      close_buffer(NULL, bufref.br_buf, DOBUF_WIPE, false, false);
+      close_buffer(NULL, bufref.br_buf, DOBUF_WIPE, false, false, false);
     }
 
     // Restore window sizes.
@@ -4869,7 +4894,7 @@ void get_user_input(const typval_T *const argvars, typval_T *const rettv, const 
   typval_T *cancelreturn = NULL;
   typval_T cancelreturn_strarg2 = TV_INITIAL_VALUE;
   const char *xp_name = NULL;
-  Callback input_callback = { .type = kCallbackNone };
+  Callback input_callback = CALLBACK_INIT;
   char prompt_buf[NUMBUFLEN];
   char defstr_buf[NUMBUFLEN];
   char cancelreturn_buf[NUMBUFLEN];

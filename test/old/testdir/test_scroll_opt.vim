@@ -237,7 +237,7 @@ func Test_smoothscroll_number()
   call term_sendkeys(buf, "\<C-Y>")
   call VerifyScreenDump(buf, 'Test_smooth_number_6', {})
 
-  call term_sendkeys(buf, ":botright split\<CR>gg")
+  call term_sendkeys(buf, ":botright split\<CR>\<C-L>gg")
   call VerifyScreenDump(buf, 'Test_smooth_number_7', {})
   call term_sendkeys(buf, "\<C-E>")
   call VerifyScreenDump(buf, 'Test_smooth_number_8', {})
@@ -518,7 +518,8 @@ func Test_smoothscroll_long_line_showbreak()
       vim9script
       # a line that spans four screen lines
       setline(1, 'with lots of text in one line '->repeat(6))
-      set smoothscroll scrolloff=0 showbreak=+++\ 
+      set smoothscroll scrolloff=0
+      &showbreak = '+++ '
   END
   call writefile(lines, 'XSmoothLongShowbreak', 'D')
   let buf = RunVimInTerminal('-S XSmoothLongShowbreak', #{rows: 6, cols: 40})

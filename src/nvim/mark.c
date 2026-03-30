@@ -7,7 +7,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "nvim/api/private/helpers.h"
 #include "nvim/ascii_defs.h"
+#include "nvim/autocmd.h"
 #include "nvim/buffer.h"
 #include "nvim/buffer_defs.h"
 #include "nvim/charset.h"
@@ -39,6 +41,7 @@
 #include "nvim/os/time.h"
 #include "nvim/os/time_defs.h"
 #include "nvim/path.h"
+#include "nvim/plines.h"
 #include "nvim/pos_defs.h"
 #include "nvim/quickfix.h"
 #include "nvim/strings.h"
@@ -61,7 +64,7 @@
 // Returns OK on success, FAIL if bad name given.
 int setmark(int c)
 {
-  fmarkv_T view = mark_view_make(curwin->w_topline, curwin->w_cursor);
+  fmarkv_T view = mark_view_make(curwin, curwin->w_cursor);
   return setmark_pos(c, &curwin->w_cursor, curbuf->b_fnum, &view);
 }
 
@@ -85,6 +88,25 @@ void clear_fmark(fmark_T *const fm, const Timestamp timestamp)
   free_fmark(*fm);
   *fm = (fmark_T)INIT_FMARK;
   fm->timestamp = timestamp;
+}
+
+/// Schedules "MarkSet" event.
+///
+/// @param c The name of the mark, e.g., 'a'.
+/// @param pos Position of the mark in the buffer.
+/// @param buf The buffer of the mark.
+static void do_markset_autocmd(char c, pos_T *pos, buf_T *buf)
+{
+  if (!has_event(EVENT_MARKSET)) {
+    return;
+  }
+
+  MAXSIZE_TEMP_DICT(data, 3);
+  char mark_str[2] = { c, '\0' };
+  PUT_C(data, "name", STRING_OBJ(((String){ .data = mark_str, .size = 1 })));
+  PUT_C(data, "line", INTEGER_OBJ(pos->lnum));
+  PUT_C(data, "col", INTEGER_OBJ(pos->col));
+  aucmd_defer(EVENT_MARKSET, mark_str, NULL, AUGROUP_ALL, buf, NULL, &DICT_OBJ(data));
 }
 
 // Set named mark "c" to position "pos".
@@ -119,6 +141,7 @@ int setmark_pos(int c, pos_T *pos, int fnum, fmarkv_T *view_pt)
 
   if (c == '"') {
     RESET_FMARK(&buf->b_last_cursor, *pos, buf->b_fnum, view);
+    do_markset_autocmd((char)c, pos, buf);
     return OK;
   }
 
@@ -126,10 +149,12 @@ int setmark_pos(int c, pos_T *pos, int fnum, fmarkv_T *view_pt)
   // file.
   if (c == '[') {
     buf->b_op_start = *pos;
+    do_markset_autocmd((char)c, pos, buf);
     return OK;
   }
   if (c == ']') {
     buf->b_op_end = *pos;
+    do_markset_autocmd((char)c, pos, buf);
     return OK;
   }
 
@@ -143,6 +168,7 @@ int setmark_pos(int c, pos_T *pos, int fnum, fmarkv_T *view_pt)
       // Visual_mode has not yet been set, use a sane default.
       buf->b_visual.vi_mode = 'v';
     }
+    do_markset_autocmd((char)c, pos, buf);
     return OK;
   }
 
@@ -154,6 +180,7 @@ int setmark_pos(int c, pos_T *pos, int fnum, fmarkv_T *view_pt)
   if (ASCII_ISLOWER(c)) {
     i = c - 'a';
     RESET_FMARK(buf->b_namedm + i, *pos, fnum, view);
+    do_markset_autocmd((char)c, pos, buf);
     return OK;
   }
   if (ASCII_ISUPPER(c) || ascii_isdigit(c)) {
@@ -163,6 +190,7 @@ int setmark_pos(int c, pos_T *pos, int fnum, fmarkv_T *view_pt)
       i = c - 'A';
     }
     RESET_XFMARK(namedfm + i, *pos, fnum, view, NULL);
+    do_markset_autocmd((char)c, pos, buf);
     return OK;
   }
   return FAIL;
@@ -256,7 +284,7 @@ void setpcmark(void)
   curwin->w_jumplistidx = curwin->w_jumplistlen;
   fm = &curwin->w_jumplist[curwin->w_jumplistlen - 1];
 
-  fmarkv_T view = mark_view_make(curwin->w_topline, curwin->w_pcmark);
+  fmarkv_T view = mark_view_make(curwin, curwin->w_pcmark);
   SET_XFMARK(fm, curwin->w_pcmark, curbuf->b_fnum, view, NULL);
 }
 
@@ -664,13 +692,17 @@ void mark_view_restore(fmark_T *fm)
     // and this check can prevent restoring mark view in that case.
     if (topline >= 1) {
       set_topline(curwin, topline);
+      curwin->w_skipcol = (fm->view.skipcol > 0
+                           && !hasFolding(curwin, topline, NULL, NULL)
+                           && fm->view.skipcol < linetabsize_eol(curwin, topline))
+                          ? fm->view.skipcol : 0;
     }
   }
 }
 
-fmarkv_T mark_view_make(linenr_T topline, pos_T pos)
+fmarkv_T mark_view_make(const win_T *wp, pos_T pos)
 {
-  return (fmarkv_T){ pos.lnum - topline };
+  return (fmarkv_T){ pos.lnum - wp->w_topline, wp->w_skipcol };
 }
 
 /// Search for the next named mark in the current file from a start position.
@@ -1153,7 +1185,7 @@ void ex_changes(exarg_T *eap)
     } \
   }
 
-// don't delete the line, just put at first deleted line
+// "NO DELete": don't delete the line, just put at first deleted line.
 #define ONE_ADJUST_NODEL(add) \
   { \
     lp = add; \
@@ -1420,6 +1452,10 @@ void mark_col_adjust(linenr_T lnum, colnr_T mincol, linenr_T lnum_amount, colnr_
 
   // last change position
   COL_ADJUST(&(curbuf->b_last_change.mark));
+
+  if (bt_prompt(curbuf)) {
+    COL_ADJUST(&(curbuf->b_prompt_start.mark));
+  }
 
   // list of change positions
   for (int i = 0; i < curbuf->b_changelistlen; i++) {

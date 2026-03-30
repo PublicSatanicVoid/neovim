@@ -75,6 +75,7 @@ Defaults                                            *defaults* *nvim-defaults*
 - 'nrformats' defaults to "bin,hex"
 - 'path' defaults to ".,,". The C ftplugin adds "/usr/include" if it exists.
 - 'sessionoptions' includes "unix,slash", excludes "options"
+- 'shelltemp' is disabled
 - 'shortmess' includes "CF", excludes "S"
 - 'sidescroll' defaults to 1
 - 'smarttab' is enabled
@@ -97,6 +98,8 @@ Defaults                                            *defaults* *nvim-defaults*
 - |man.lua| plugin is enabled, so |:Man| is available by default.
 - |matchit| plugin is enabled. To disable it in your config: >vim
     :let loaded_matchit = 1
+- |package-spellfile| plugin is enabled, spellfiles are installed by default
+  if missing.
 
 - |g:vimsyn_embed| defaults to "l" to enable Lua highlighting
 
@@ -154,18 +157,20 @@ you never want any default mappings, call |:mapclear| early in your config.
 - [D |[D-default|
 - ]D |]D-default|
 - <C-W>d |CTRL-W_d-default|
-- |[q| |]q| |[Q| |]Q| |[CTRL-Q| |]CTRL-Q|
-- |[l| |]l| |[L| |]L| |[CTRL-L| |]CTRL-L|
-- |[t| |]t| |[T| |]T| |[CTRL-T| |]CTRL-T|
+- |[q| |]q| |[Q| |]Q| |[_CTRL-Q| |]_CTRL-Q|
+- |[l| |]l| |[L| |]L| |[_CTRL-L| |]_CTRL-L|
+- |[t| |]t| |[T| |]T| |[_CTRL-T| |]_CTRL-T|
 - |[a| |]a| |[A| |]A|
 - |[b| |]b| |[B| |]B|
 - |[<Space>| |]<Space>|
 - LSP defaults |lsp-defaults|
   - K |K-lsp-default|
-  - |v_an| |v_in|
   - gr prefix |gr-default|
     - |gra| |gri| |grn| |grr| |grt|
   - <C-S> |i_CTRL-S|
+- Treesitter defaults |treesitter-defaults|
+  - |v_an| |v_in|
+  - |v_]n| |v_[n|
 
 DEFAULT AUTOCOMMANDS
                                                         *default-autocmds*
@@ -176,6 +181,7 @@ nvim.terminal:
 - BufReadCmd: Treats "term://" buffers as |terminal| buffers. |terminal-start|
 - TermClose: A |terminal| buffer started with no arguments (which thus uses
   'shell') and which exits with no error is closed automatically.
+- TermClose: Displays the "[Process exited]" virtual text.
 - TermRequest: The terminal emulator responds to OSC background and foreground
   requests, indicating (1) a black background and white foreground when Nvim
   option 'background' is "dark" or (2) a white background and black foreground
@@ -305,6 +311,7 @@ Commands:
 - |:EditQuery|
 - |:Inspect|
 - |:InspectTree|
+- |:lsp|
 - |:Man| is available by default, with many improvements such as completion
 - |:match| can be invoked before highlight group is defined
 - |:restart|
@@ -349,6 +356,7 @@ Functions:
 - |tempname()| tries to recover if the Nvim |tempdir| disappears.
 - |writefile()| with "p" flag creates parent directories.
 - |prompt_getinput()|
+- |prompt_appendbuf()|
 
 Highlight groups:
 - |highlight-blend| controls blend level for a highlight group
@@ -422,6 +430,8 @@ Options:
 - 'winblend'    pseudo-transparency in floating windows |api-floatwin|
 - 'winhighlight' window-local highlights
 - 'busy' busy status for buffers
+- 'messagesopt' added progress:c to control if progress messages are shown in
+  cmdline
 
 Performance:
 - Signs are implemented using Nvim's internal "marktree" (btree) structure.
@@ -741,6 +751,7 @@ Editor:
 - *cscope* support was removed in favour of plugin-based solutions such as:
   https://github.com/dhananjaylatkar/cscope_maps.nvim
 - *popup-window* : Use |floating-windows| instead.
+- *spellfile.vim* : Replaced by |package-spellfile|.
 - *textprop* : Use |extmarks| instead.
 
 Eval:
@@ -749,6 +760,8 @@ Eval:
 - *err_teapot()*
 - *js_encode()*
 - *js_decode()*
+- *listener_add()* , etc: use |api-buffer-updates-lua| instead.
+- *redraw_listener_add()* , etc:  use |nvim_set_decoration_provider()| instead.
 - *v:none* (used by Vim to represent JavaScript "undefined"); use |v:null| instead.
 - *v:sizeofint*
 - *v:sizeoflong*
