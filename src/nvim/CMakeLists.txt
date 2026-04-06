@@ -58,6 +58,24 @@ if(ENABLE_WASMTIME)
   target_compile_definitions(nvim_bin PRIVATE HAVE_WASMTIME)
 endif()
 
+# mimalloc allocator support - provides ~5-10% performance improvement for tree-sitter parsing
+option(ENABLE_MIMALLOC "Use mimalloc allocator instead of system malloc" OFF)
+if(ENABLE_MIMALLOC)
+  if(MIMALLOC_LIBRARY)
+    message(STATUS "Using mimalloc library: ${MIMALLOC_LIBRARY}")
+    # Link with --whole-archive to ensure malloc/free symbols are exported and override glibc
+    target_link_libraries(nvim_bin PRIVATE
+      -Wl,--whole-archive
+      ${MIMALLOC_LIBRARY}
+      -Wl,--no-whole-archive
+      pthread)
+    target_compile_definitions(nvim_bin PRIVATE HAVE_MIMALLOC)
+  else()
+    message(FATAL_ERROR "ENABLE_MIMALLOC is ON but MIMALLOC_LIBRARY is not set. "
+      "Please set -DMIMALLOC_LIBRARY=/path/to/libmimalloc.a")
+  endif()
+endif()
+
 # The unit test lib requires LuaJIT; it will be skipped if LuaJIT is missing.
 option(PREFER_LUA "Prefer Lua over LuaJIT in the nvim executable." OFF)
 if(PREFER_LUA)
