@@ -283,7 +283,7 @@ void msg_multiline(String str, int hl_id, bool check_int, bool hist, bool *need_
     if (check_int && got_int) {
       return;
     }
-    if (*s == '\n' || *s == TAB || *s == '\r') {
+    if (*s == '\n' || *s == TAB || *s == '\r' || *s == BELL) {
       // Print all chars before the delimiter
       msg_outtrans_len(chunk, (int)(s - chunk), hl_id, hist);
 
@@ -291,7 +291,11 @@ void msg_multiline(String str, int hl_id, bool check_int, bool hist, bool *need_
         msg_clr_eos();
         *need_clear = false;
       }
-      msg_putchar_hl((uint8_t)(*s), hl_id);
+      if (*s == BELL) {
+        vim_beep(kOptBoFlagShell);
+      } else {
+        msg_putchar_hl((uint8_t)(*s), hl_id);
+      }
       chunk = s + 1;
     }
     s++;
@@ -2338,6 +2342,7 @@ void msg_puts_len(const char *const str, const ptrdiff_t len, int hl_id, bool hi
     if (*str == NUL && ui_has(kUIMessages)) {
       ui_call_msg_show(cstr_as_string("empty"), (Array)ARRAY_DICT_INIT, false, false, false,
                        INTEGER_OBJ(-1), (String)STRING_INIT);
+      cmdline_was_last_drawn = false;
     }
     return;
   }
@@ -3311,6 +3316,7 @@ void msg_clr_eos_force(void)
   if (msg_row < Rows - 1 || msg_col == 0) {
     clear_cmdline = false;  // command line has been cleared
     mode_displayed = false;  // mode cleared or overwritten
+    cmdline_was_last_drawn = false;
   }
 }
 
